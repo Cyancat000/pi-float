@@ -5,6 +5,7 @@ import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { TerminalBridge } from "./bridge-client";
 import { Code } from "./code-highlight";
+import { useComposerEditor } from "./composer-editor";
 import { usePreferences } from "./preferences";
 import { SessionTreePanel } from "./session-tree";
 import { TodoPanel } from "./todo-panel";
@@ -112,8 +113,7 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
   const { snapshot } = terminal;
   const connected = terminal.connection === "connected" && !!snapshot;
   const modules = usePreferences((prefs) => prefs.modules);
-  const [draft, setDraft] = useState("");
-  const input = useRef<HTMLTextAreaElement>(null);
+  const [{ text: draft, folded, startsInPaste }, setDraft] = useState({ text: "", folded: false, startsInPaste: false });
   const feed = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [sending, setSending] = useState(false);
@@ -179,14 +179,41 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
     finally { setChanging(false); }
   }
 
-  const menuOpen = connected && !dismissed && /^\/[^\s]*$/.test(draft);
+  const menuOpen = connected && !dismissed && !folded && /^\/[^\s]*$/.test(draft);
   const matches = menuOpen ? commands.filter(({ name }) => name.toLowerCase().startsWith(draft.slice(1).toLowerCase()))
     .sort((a, b) => Number(b.name === draft.slice(1)) - Number(a.name === draft.slice(1)) || a.name.localeCompare(b.name)) : [];
   const index = Math.min(choice, matches.length - 1);
   useEffect(() => {
     commandList.current?.children[index]?.scrollIntoView({ block: "nearest" });
   }, [index, draft]);
-  const canSend = ready && connected && !changing && !sending && !!draft.trim() && !(busy && draft.trimStart().startsWith("/"));
+  const isDraftCommand = !startsInPaste && draft.trimStart().startsWith("/");
+  const canSend = ready && connected && !changing && !sending && !!draft.trim() && !(busy && isDraftCommand);
+  const composer = useComposerEditor({
+    disabled: !connected || !ready,
+    hint: busy ? "插话给终端…" : "输入消息…",
+    showCommands: menuOpen,
+    activeCommand: index,
+    onEdit(next) { setDraft(next); setChoice(0); setDismissed(false); },
+    onKeyDown(event): boolean {
+      if (menuOpen && event.key === "Escape") { setDismissed(true); return true; }
+      if (index >= 0 && !event.shiftKey) {
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          setChoice((index + (event.key === "ArrowDown" ? 1 : -1) + matches.length) % matches.length);
+          return true;
+        }
+        if (event.key === "Tab") {
+          const insert = `/${matches[index].name} `;
+          const editor = composer.view.current;
+          if (editor) editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert }, selection: { anchor: insert.length } });
+          return true;
+        }
+        if (event.key === "Enter") { submit(undefined, `/${matches[index].name}`); return true; }
+      }
+      if (event.key !== "Enter" || event.shiftKey) return false;
+      submit();
+      return true;
+    },
+  });
   const messages = snapshot?.messages ?? [];
   const results = messages.filter((message) => message.role === "tool");
   const matched = new Set(messages.flatMap((message) => message.blocks.flatMap((block) => block.kind === "toolCall" ? [block.toolCallId] : [])));
@@ -194,37 +221,30 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
   const terminalModelSelected = terminalModels.some(({ provider, id }) => `${provider}/${id}` === snapshot?.model);
 
   useLayoutEffect(() => {
-    if (!input.current) return;
-    const el = input.current;
-    el.style.height = "auto";
-    const height = el.scrollHeight + el.offsetHeight - el.clientHeight;
-    el.style.height = `${Math.min(116, height)}px`;
-    el.style.overflowY = height > 116 ? "auto" : "hidden";
-  }, [draft]);
-  useLayoutEffect(() => {
     if (stick.current && feed.current) feed.current.scrollTop = feed.current.scrollHeight;
   }, [snapshot?.messages, snapshot?.streaming, modules]);
 
-  function submit(event?: FormEvent<HTMLFormElement>, value = draft) {
+  function submit(event?: FormEvent<HTMLFormElement>, command?: string) {
     event?.preventDefault();
     if (!canSend) return;
-    const text = value.trim();
-    if (snapshot?.sessionActions && /^\/(new|resume)(?:\s|$)/.test(text)) {
+    const isCommand = command !== undefined || isDraftCommand;
+    // Keep the original indentation and trailing newline of folded code.
+    const text = command ?? (folded && !isCommand ? draft : draft.trim());
+    if (isCommand && snapshot?.sessionActions && /^\/(new|resume)(?:\s|$)/.test(text)) {
       if (text !== "/new" && text !== "/resume") { report("请直接使用 /new 或 /resume，不需要参数"); return; }
-      setDraft(""); void sessionAction(text === "/new" ? "new_session" : "list_sessions"); return;
+      composer.clear(); void sessionAction(text === "/new" ? "new_session" : "list_sessions"); return;
     }
-    const isCommand = text.startsWith("/");
     if (isCommand && !commands.some(({ name }) => name === text.slice(1).split(/\s/, 1)[0])) {
       report(snapshot?.commands ? "此命令不在当前会话列表中；仅限终端的命令请在 Pi 中执行。" : "请先在 Pi 终端重新加载 pi-float 扩展以启用命令。");
       return;
     }
-    setDraft("");
+    const submitted = composer.view.current?.state.doc;
     stick.current = true;
     setSending(true);
-    void terminal.request({ type: isCommand ? "command" : "send", text }).catch((error) => {
-      setDraft((current) => current || text);
-      report(error);
-    }).finally(() => setSending(false));
+    void terminal.request({ type: isCommand ? "command" : "send", text }).then(() => {
+      // Leave the draft intact on failure or if the user started editing it again.
+      if (composer.view.current?.state.doc === submitted) composer.clear();
+    }).catch(report).finally(() => setSending(false));
   }
 
   return <>
@@ -272,21 +292,7 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
         </div>
         {!matches.length && <p className="px-2 py-1">{snapshot?.commands ? "没有匹配的命令" : "请在终端重新加载 pi-float 扩展"}</p>}
       </div>}
-      <textarea ref={input} rows={1} className="field block w-full resize-none" aria-label="消息" placeholder={busy ? "插话给终端…" : "输入消息…"} value={draft} disabled={!connected || !ready} aria-controls={menuOpen ? "pi-commands" : undefined} aria-activedescendant={index >= 0 ? `pi-command-${index}` : undefined}
-        onChange={(event) => { setDraft(event.currentTarget.value); setChoice(0); setDismissed(false); }} onKeyDown={(event) => {
-        if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-        if (menuOpen && event.key === "Escape") { event.preventDefault(); setDismissed(true); return; }
-        if (index >= 0 && !event.shiftKey) {
-          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-            event.preventDefault(); setChoice((index + (event.key === "ArrowDown" ? 1 : -1) + matches.length) % matches.length); return;
-          }
-          if (event.key === "Tab") { event.preventDefault(); setDraft(`/${matches[index].name} `); return; }
-          if (event.key === "Enter") { event.preventDefault(); submit(undefined, `/${matches[index].name}`); return; }
-        }
-        if (event.key !== "Enter" || event.shiftKey) return;
-        event.preventDefault();
-        submit();
-      }} />
+      <div ref={composer.host} className="field composer" />
       <div className="mt-1.5 flex items-center justify-between gap-1.5">
         <select className="field model-select" aria-label="模型" disabled={!connected || busy || changing || !terminalModels.length} value={snapshot?.model ?? ""} onChange={(event) => {
           const model = terminalModels.find(({ provider, id }) => `${provider}/${id}` === event.currentTarget.value);
