@@ -1,7 +1,7 @@
 import type { ChatMessage, ContextUsage, MessageBlock, ModuleVisibility, SessionTree, StreamingMessage, WorkspaceSession } from "@pi-float/protocol";
-import { ArrowUp, Check, Copy, RotateCw, Square } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
-import Markdown from "react-markdown";
+import { ArrowUp, Check, ChevronDown, ChevronUp, Copy, RotateCw, Square } from "lucide-react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { TerminalBridge } from "./bridge-client";
 import { Code } from "./code-highlight";
@@ -10,14 +10,23 @@ import { SessionTreePanel } from "./session-tree";
 import { TodoPanel } from "./todo-panel";
 import { ToolCallDetail, ToolResult } from "./tool-content";
 
-function CodeFence({ source, children }: { source: string; children: React.ReactNode }) {
+const CODE_PREVIEW_LINES = 8;
+
+function CodeFence({ source, languageClass }: { source: string; languageClass?: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const codeId = useId();
+  // Markdown adds a trailing newline; it isn't an extra source line.
+  const code = source.replace(/\n$/, "");
+  const lines = code.split("\n");
+  const foldable = lines.length > CODE_PREVIEW_LINES;
+  const visibleSource = foldable && !expanded ? lines.slice(0, CODE_PREVIEW_LINES).join("\n") + "\n" : source;
   const [copied, setCopied] = useState(false);
   const [failed, setFailed] = useState(false);
   const timer = useRef<number>(undefined);
   useEffect(() => () => window.clearTimeout(timer.current), []);
   async function copy() {
     try {
-      await navigator.clipboard.writeText(source.replace(/\n$/, ""));
+      await navigator.clipboard.writeText(code);
       setCopied(true);
       setFailed(false);
     } catch { setFailed(true); }
@@ -26,25 +35,34 @@ function CodeFence({ source, children }: { source: string; children: React.React
   }
   return (
     <div className="code-fence">
-      <button className="icon-button" type="button" title="复制代码" aria-label="复制代码" onClick={() => void copy()}>{copied ? <Check size={13} /> : <Copy size={13} />}</button>
+      <button className="icon-button code-fence-copy" type="button" title="复制代码" aria-label="复制代码" onClick={() => void copy()}>{copied ? <Check size={13} /> : <Copy size={13} />}</button>
       {(copied || failed) && <span className="sr-only" role="status">{copied ? "代码已复制" : "未能复制代码"}</span>}
-      <pre>{children}</pre>
+      <pre id={codeId}><Code className={languageClass}>{visibleSource}</Code></pre>
+      {foldable && <button className="code-fence-toggle" type="button" aria-controls={codeId} aria-expanded={expanded} onClick={() => setExpanded((open) => !open)}>
+        {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+        {expanded ? "收起代码" : `展开全部 ${lines.length} 行`}
+      </button>}
     </div>
   );
 }
 
+const markdownComponents: Components = {
+  code: ({ node: _, ...props }) => <Code {...props} />,
+  pre: ({ node }) => {
+    const code = node?.children[0];
+    if (code?.type !== "element") return null;
+    const source = code.children.map((child) => child.type === "text" ? child.value : "").join("");
+    const classes = code.properties.className;
+    const languageClass = Array.isArray(classes) ? classes.join(" ") : undefined;
+    return <CodeFence source={source} languageClass={languageClass} />;
+  },
+  // Don't load tracking images or navigate the app webview from provider output.
+  img: ({ alt }) => <span>{alt || "[图片]"}</span>,
+  a: ({ children, href }) => <span title={href} className="text-sky-300 underline">{children}</span>,
+};
+
 function MarkdownText({ text }: { text: string }) {
-  return <div className="markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]} components={{
-    code: ({ node: _, ...props }) => <Code {...props} />,
-    pre: ({ node, children }) => {
-      const code = node?.children[0];
-      const source = code?.type === "element" ? code.children.map((child) => child.type === "text" ? child.value : "").join("") : "";
-      return <CodeFence source={source}>{children}</CodeFence>;
-    },
-    // Don't load tracking images or navigate the app webview from provider output.
-    img: ({ alt }) => <span>{alt || "[图片]"}</span>,
-    a: ({ children, href }) => <span title={href} className="text-sky-300 underline">{children}</span>,
-  }}>{text}</Markdown></div>;
+  return <div className="markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]} components={markdownComponents}>{text}</Markdown></div>;
 }
 
 function Block({ block, modules, results }: { block: MessageBlock; modules: ModuleVisibility; results: Extract<ChatMessage, { role: "tool" }>[] }) {

@@ -40,6 +40,8 @@ html, body, #root { height: 100%; background: transparent; }
 .markdown :is(th, td) { border: 1px solid #424d62; padding: .2em .4em; }
 .markdown :not(pre) > code { background: #141922; padding: .1em .25em; border-radius: 3px; }
 .code-fence { position: relative; background: #11161e; border: 1px solid #303c51; border-radius: 5px; }
-.code-fence > button { position: absolute; top: 2px; right: 2px; background: #212b3a; }
+.code-fence-copy { position: absolute; top: 2px; right: 2px; background: #212b3a; }
 .code-fence > pre { max-width: 100%; overflow: auto; padding: 7px 32px 7px 7px; font-size: 12px; }
+.code-fence-toggle { display: flex; align-items: center; justify-content: center; gap: 4px; width: 100%; border-top: 1px solid #303c51; padding: 4px 7px; color: #bae6fd; font-size: 11px; cursor: pointer; }
+.code-fence-toggle:hover { background: #212b3a; }
 :focus-visible { outline: 2px solid #7dd3fc; outline-offset: 1px; }
