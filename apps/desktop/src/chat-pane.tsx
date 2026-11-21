@@ -10,8 +10,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ComponentPropsWithou
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { TerminalBridge } from "./bridge-client";
-import { sendChat, stopChat, useChat } from "./chat-state";
-import { modelChoices, modelKey, usePreferences } from "./preferences";
+import { usePreferences } from "./preferences";
 import "highlight.js/styles/github-dark.css";
 
 for (const [name, language] of Object.entries({ bash, javascript, json, python, typescript })) hljs.registerLanguage(name, language);
@@ -77,15 +76,14 @@ function Block({ block, modules, results }: { block: MessageBlock; modules: Modu
   return <MarkdownText text={block.text} />;
 }
 
-function Message({ message, modules, results, duration }: { message: ChatMessage | StreamingMessage; modules: ModuleVisibility; results: Extract<ChatMessage, { role: "tool" }>[]; duration?: number }) {
-  const usage = "usage" in message ? message.usage : undefined;
-  const showUsage = modules.showTokenUsage && (usage || duration !== undefined);
+function Message({ message, modules, results }: { message: ChatMessage | StreamingMessage; modules: ModuleVisibility; results: Extract<ChatMessage, { role: "tool" }>[] }) {
+  const usage = modules.showTokenUsage && "usage" in message ? message.usage : undefined;
   const visibleBlocks = message.blocks.filter((block) => {
     if (block.kind === "thinking") return modules.showThinking;
     if (block.kind === "toolCall") return modules.showToolCalls;
     return true;
   });
-  if (message.role === "assistant" && !visibleBlocks.length && !("error" in message && message.error) && !showUsage) return null;
+  if (message.role === "assistant" && !visibleBlocks.length && !("error" in message && message.error) && !usage) return null;
   const label = message.role === "user" ? "你" : message.role === "assistant" ? "助手" : message.role === "tool" ? "工具结果 · " + message.toolName : "通知";
   const time = new Date(message.timestamp);
   return (
@@ -96,9 +94,8 @@ function Message({ message, modules, results, duration }: { message: ChatMessage
       </header>
       {message.role === "tool" ? <ToolResult message={message} /> : message.blocks.map((block, index) => <Block key={index} block={block} modules={modules} results={results} />)}
       {"error" in message && message.error && <p className="text-xs text-red-300" role="alert">{message.error}</p>}
-      {showUsage && <p className="mt-1 text-[11px] text-slate-400">
-        {usage && <span>{usage.totalTokens} tokens（输入 {usage.input} · 输出 {usage.output}{usage.cacheRead ? ` · 缓存读 ${usage.cacheRead}` : ""}{usage.cacheWrite ? ` · 缓存写 ${usage.cacheWrite}` : ""}{usage.reasoning !== undefined ? ` · 推理 ${usage.reasoning}` : ""}）</span>}
-        {duration !== undefined && <span>{usage ? " · " : ""}{(duration / 1000).toFixed(1)} s</span>}
+      {usage && <p className="mt-1 text-[11px] text-slate-400">
+        {usage.totalTokens} tokens（输入 {usage.input} · 输出 {usage.output}{usage.cacheRead ? ` · 缓存读 ${usage.cacheRead}` : ""}{usage.cacheWrite ? ` · 缓存写 ${usage.cacheWrite}` : ""}{usage.reasoning !== undefined ? ` · 推理 ${usage.reasoning}` : ""}）
       </p>}
     </article>
   );
@@ -108,21 +105,17 @@ function ContextMeter({ usage }: { usage: ContextUsage }) {
   return <span className="text-[11px] text-slate-400">上下文 {usage.tokens ?? "—"} / {usage.contextWindow}{usage.percent !== null && ` · ${Math.round(usage.percent)}%`}</span>;
 }
 
-export function ChatPane({ terminal, ready, report }: { terminal?: TerminalBridge; ready: boolean; report: (error: unknown) => void }) {
-  const standalone = useChat();
-  const snapshot = terminal ? terminal.snapshot : standalone.snapshot;
-  const connected = !terminal || (terminal.connection === "connected" && !!terminal.snapshot);
-  const { modules, providers } = usePreferences();
-  const models = modelChoices(providers);
-  const [override, setOverride] = useState("");
-  const selection = models.find(({ key }) => key === override) ?? models.find(({ key }) => key === modelKey(providers.defaultModel)) ?? models[0];
+export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge; ready: boolean; report: (error: unknown) => void }) {
+  const { snapshot } = terminal;
+  const connected = terminal.connection === "connected" && !!snapshot;
+  const modules = usePreferences((prefs) => prefs.modules);
   const [draft, setDraft] = useState("");
   const input = useRef<HTMLTextAreaElement>(null);
   const feed = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [sending, setSending] = useState(false);
   const busy = snapshot?.idle === false;
-  const canSend = ready && connected && !sending && !!draft.trim() && (!!terminal || (!busy && !!selection));
+  const canSend = ready && connected && !sending && !!draft.trim();
   const messages = snapshot?.messages ?? [];
   const results = messages.filter((message) => message.role === "tool");
   const matched = new Set(messages.flatMap((message) => message.blocks.flatMap((block) => block.kind === "toolCall" ? [block.toolCallId] : [])));
@@ -147,15 +140,11 @@ export function ChatPane({ terminal, ready, report }: { terminal?: TerminalBridg
     const text = draft.trim();
     setDraft("");
     stick.current = true;
-    if (terminal) {
-      setSending(true);
-      void terminal.request({ type: "send", text }).catch((error) => {
-        setDraft((current) => current || text);
-        report(error);
-      }).finally(() => setSending(false));
-    } else if (selection) {
-      void sendChat(text, selection.provider, selection.model).catch(report);
-    }
+    setSending(true);
+    void terminal.request({ type: "send", text }).catch((error) => {
+      setDraft((current) => current || text);
+      report(error);
+    }).finally(() => setSending(false));
   }
 
   return <>
@@ -163,33 +152,30 @@ export function ChatPane({ terminal, ready, report }: { terminal?: TerminalBridg
       const el = event.currentTarget;
       stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
     }}>
-      {terminal && !connected && <p className="px-2 py-1 text-xs text-slate-400" role="status">正在连接 Pi 终端…</p>}
-      {connected && !messages.length && !busy && <div className="empty-chat">{terminal || selection ? "发送消息开始对话" : "请先在设置中添加提供商和模型"}</div>}
-      {messages.map((message) => message.role === "tool" && (!modules.showToolCalls || matched.has(message.toolCallId)) ? null : <Message key={message.id} message={message} modules={modules} results={results} duration={terminal ? undefined : standalone.durations[message.id]} />)}
+      {!connected && <p className="px-2 py-1 text-xs text-slate-400" role="status">正在连接 Pi 终端…</p>}
+      {connected && !messages.length && !busy && <div className="empty-chat">发送消息开始对话</div>}
+      {messages.map((message) => message.role === "tool" && (!modules.showToolCalls || matched.has(message.toolCallId)) ? null : <Message key={message.id} message={message} modules={modules} results={results} />)}
       {snapshot?.streaming && <Message message={snapshot.streaming} modules={modules} results={results} />}
       {busy && !snapshot?.streaming && <p className="px-2 text-xs text-slate-400" role="status">正在等待回复…</p>}
     </div>
     <form className="shrink-0 border-t border-white/12 p-2" onSubmit={submit}>
-      <textarea ref={input} rows={1} className="field block w-full resize-none" aria-label="消息" placeholder={terminal && busy ? "插话给终端…" : "输入消息…"} value={draft} disabled={!connected || !ready} onChange={(event) => setDraft(event.currentTarget.value)} onKeyDown={(event) => {
+      <textarea ref={input} rows={1} className="field block w-full resize-none" aria-label="消息" placeholder={busy ? "插话给终端…" : "输入消息…"} value={draft} disabled={!connected || !ready} onChange={(event) => setDraft(event.currentTarget.value)} onKeyDown={(event) => {
         if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing || event.keyCode === 229) return;
         event.preventDefault();
         submit();
       }} />
       <div className="mt-1.5 flex items-center justify-between gap-1.5">
-        {terminal ? <select className="field model-select" aria-label="模型" disabled={!connected || busy || !terminalModels.length} value={snapshot?.model ?? ""} onChange={(event) => {
+        <select className="field model-select" aria-label="模型" disabled={!connected || busy || !terminalModels.length} value={snapshot?.model ?? ""} onChange={(event) => {
           const model = terminalModels.find(({ provider, id }) => `${provider}/${id}` === event.currentTarget.value);
           if (model) void terminal.request({ type: "set_model", provider: model.provider, modelId: model.id }).catch(report);
         }}>
           {!terminalModelSelected && <option value={snapshot?.model ?? ""}>{snapshot?.model ?? "无终端模型"}</option>}
           {terminalModels.map(({ provider, id, name }) => <option key={`${provider}/${id}`} value={`${provider}/${id}`}>{provider} / {name || id}</option>)}
-        </select> : <select className="field model-select" aria-label="模型" disabled={busy || !models.length} value={selection?.key ?? ""} onChange={(event) => setOverride(event.currentTarget.value)}>
-          {!models.length && <option value="">未配置模型</option>}
-          {models.map(({ key, provider, model }) => <option key={key} value={key}>{provider.name} / {model}</option>)}
-        </select>}
+        </select>
         {modules.showTokenUsage && snapshot?.contextUsage && <ContextMeter usage={snapshot.contextUsage} />}
         <div className="flex shrink-0 gap-1">
-          {busy && <button className="icon-button" type="button" aria-label="中止" title="中止" disabled={!connected} onClick={() => void (terminal ? terminal.request({ type: "abort" }) : stopChat()).catch(report)}><Square size={15} /></button>}
-          {(!busy || terminal) && <button className="icon-button primary-action" type="submit" aria-label={terminal && busy ? "插话" : "发送"} title={terminal && busy ? "插话" : "发送"} disabled={!canSend}><ArrowUp size={16} /></button>}
+          {busy && <button className="icon-button" type="button" aria-label="中止" title="中止" disabled={!connected} onClick={() => void terminal.request({ type: "abort" }).catch(report)}><Square size={15} /></button>}
+          <button className="icon-button primary-action" type="submit" aria-label={busy ? "插话" : "发送"} title={busy ? "插话" : "发送"} disabled={!canSend}><ArrowUp size={16} /></button>
         </div>
       </div>
     </form>

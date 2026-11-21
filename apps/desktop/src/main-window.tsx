@@ -53,9 +53,9 @@ export function MainWindow({ ready, report }: { ready: boolean; report: (error: 
     <div className="floating-shell flex h-full flex-col overflow-hidden" style={{ opacity }}>
       <header className="flex h-[34px] shrink-0 items-center border-b border-white/10 pl-2 pr-1" data-tauri-drag-region>
         <label className="relative flex items-center">
-          <span className="sr-only">会话模式</span>
+          <span className="sr-only">Pi 终端</span>
           <select className="mode-select max-w-[150px] truncate" value={selected} onChange={(event) => bridge.select(event.currentTarget.value)}>
-            <option value="">独立会话</option>
+            <option value="">未附着终端</option>
             {sessions.map((row) => <option key={sessionKey(row)} value={sessionKey(row)} title={row.cwd}>{projectFolder(row.cwd)}{sessions.filter(({ cwd }) => projectFolder(cwd) === projectFolder(row.cwd)).length > 1 ? " · " + row.pid : ""}</option>)}
           </select>
           <ChevronDown className="pointer-events-none absolute right-1.5" size={12} />
@@ -80,7 +80,13 @@ export function MainWindow({ ready, report }: { ready: boolean; report: (error: 
         <button className="icon-button" type="button" title="设置" aria-label="设置" onClick={() => void invoke("open_settings").catch(report)}><Settings size={15} /></button>
         <button className="icon-button" type="button" title="隐藏到托盘" aria-label="隐藏到托盘" onClick={() => void mainWindow.hide().catch(report)}><Minus size={17} /></button>
       </header>
-      <ChatPane key={selected || "standalone"} terminal={selected ? bridge : undefined} ready={ready} report={report} />
+      {selected ? <ChatPane key={selected} terminal={bridge} ready={ready} report={report} /> : (
+        <div className="min-h-0 flex-1">
+          <p className="empty-chat" role="status">
+            <span>{sessions.length ? "从顶栏选择要附着的 Pi 终端。" : <>暂无可附着的终端。请在已加载 pi-float 扩展的 Pi 终端中运行 <code>/ui</code>。</>}</span>
+          </p>
+        </div>
+      )}
     </div>
   );
 }

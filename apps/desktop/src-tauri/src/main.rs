@@ -1,6 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod standalone;
 mod terminals;
 
 use std::sync::Mutex;
@@ -138,13 +137,10 @@ fn main() {
             LaunchArgs::parse(std::env::args())
                 .relative_to(&std::env::current_dir().unwrap_or_default()),
         ))
-        .manage(standalone::ActiveRequest::default())
         .invoke_handler(tauri::generate_handler![
             open_settings,
             launch_args,
-            terminals::terminal_sessions,
-            standalone::start_chat,
-            standalone::stop_chat
+            terminals::terminal_sessions
         ])
         .setup(|app| {
             install_tray(app)?;

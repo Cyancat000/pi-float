@@ -24,11 +24,7 @@ html, body, #root { height: 100%; background: transparent; }
 .field { min-width: 0; border: 1px solid #424d62; border-radius: 5px; padding: 4px 7px; background: #202632; }
 .field:disabled { opacity: .65; }
 .model-select { max-width: 67%; font-size: 11px; }
-.settings-tab { padding: 6px 10px 8px; border-bottom: 2px solid transparent; color: #aab6ca; }
-.settings-tab[aria-pressed="true"] { color: #bae6fd; border-color: #38bdf8; }
-.action-button { border: 1px solid #424d62; border-radius: 5px; padding: 4px 9px; }
 .primary-action:not(:disabled) { background: #17445d; color: #e0f2fe; }
-.action-button:disabled { opacity: .55; }
 .empty-chat { display: grid; min-height: 100%; place-items: center; padding: 12px; text-align: center; color: #94a3b8; font-size: 12px; }
 .message { min-width: 0; margin-bottom: 8px; padding: 7px 8px; border-radius: 8px; background: #202530; font-size: 13px; overflow-wrap: anywhere; }
 .message-user { margin-left: 16px; background: #233342; }
