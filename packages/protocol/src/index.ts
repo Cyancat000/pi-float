@@ -53,12 +53,18 @@ export interface TerminalModel { provider: string; id: string; name: string }
 
 export interface WorkspaceSession { id: string; label: string; modified: string }
 
+export type TodoSource = "pi-float" | "rpiv-todo";
+export type TodoStatus = "pending" | "in_progress" | "completed";
+export interface TodoItem { id: number; subject: string; status: TodoStatus }
+export interface TodoSnapshot { source: TodoSource; items: TodoItem[] }
+
 export interface SessionSnapshot extends ActiveSessionRegistration {
   schemaVersion: 1;
   messages: ChatMessage[];
   streaming: StreamingMessage | null;
   contextUsage: ContextUsage | null;
   sessionActions?: boolean;
+  todos?: TodoSnapshot;
   models?: TerminalModel[];
   commands?: { name: string; description?: string }[];
 }

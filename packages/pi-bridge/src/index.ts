@@ -1,15 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { SessionManager, type ExtensionAPI, type ExtensionContext, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import type { BridgeEvent, StreamingMessage, WorkspaceSession } from "@pi-float/protocol";
+import type { BridgeEvent, StreamingMessage, TodoSource, WorkspaceSession } from "@pi-float/protocol";
 import type { WebSocket } from "ws";
 import { launchDesktop } from "./launcher.js";
 import { observeNotifications } from "./notifications.js";
 import { availableModels, contentBlocks, snapshot } from "./projection.js";
+import { registerNativeTodo, selectTodoSource } from "./todos.js";
 import { transport } from "./transport.js";
 
 export default function piFloat(pi: ExtensionAPI): void {
   let ctx: ExtensionContext | undefined;
   let streaming: StreamingMessage | null = null;
+  let todoSource: TodoSource = "pi-float";
+  let nativeTodoRegistered = false;
   let lastStreamAt = 0;
   let commandPending = false;
   let unobserveNotifications: (() => void) | undefined;
@@ -37,7 +40,7 @@ export default function piFloat(pi: ExtensionAPI): void {
   }
 
   function sessionSnapshot(active: ExtensionContext) {
-    return { ...snapshot(active, streaming), sessionActions: true, commands: pi.getCommands().map(({ name, description }) => ({ name, description })) };
+    return { ...snapshot(active, streaming, todoSource), sessionActions: true, commands: pi.getCommands().map(({ name, description }) => ({ name, description })) };
   }
 
   function publishSnapshot() {
@@ -115,6 +118,13 @@ export default function piFloat(pi: ExtensionAPI): void {
     if (active.mode !== "tui") return;
     ctx = active;
     const sessionId = active.sessionManager.getSessionId();
+    todoSource = selectTodoSource(pi.getAllTools());
+    if (todoSource === "pi-float" && !nativeTodoRegistered) {
+      registerNativeTodo(pi, (id) => {
+        if (ctx?.sessionManager.getSessionId() === id) publishSnapshot();
+      });
+      nativeTodoRegistered = true;
+    }
     unobserveNotifications?.();
     unobserveNotifications = observeNotifications(active.ui, (message, level) => {
       if (transport.registration?.sessionId !== sessionId || !transport.hasClients) return;
@@ -140,6 +150,11 @@ export default function piFloat(pi: ExtensionAPI): void {
   pi.on("model_select", (_event, active) => updateContext(active));
   pi.on("thinking_level_select", (_event, active) => updateContext(active));
   pi.on("session_info_changed", (_event, active) => updateContext(active));
+  pi.on("session_tree", (_event, active) => updateContext(active));
+  pi.on("tool_execution_end", (event, active) => {
+    if (todoSource === "rpiv-todo" && (event.toolName === "todo" || event.toolName === "codemode")
+      && ctx?.sessionManager.getSessionId() === active.sessionManager.getSessionId()) publishSnapshot();
+  });
   pi.on("message_end", (event, active) => {
     if (event.message.role === "assistant") clearStream(active);
     ctx = active;

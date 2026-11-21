@@ -1,5 +1,6 @@
 import type { ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
-import type { ChatMessage, MessageBlock, SessionSnapshot, StreamingMessage } from "@pi-float/protocol";
+import type { ChatMessage, MessageBlock, SessionSnapshot, StreamingMessage, TodoSource } from "@pi-float/protocol";
+import { projectTodos } from "./todos.js";
 
 type Content =
   | { type: "text"; text: string }
@@ -42,8 +43,9 @@ export function availableModels(ctx: ExtensionContext) {
   return ctx.modelRegistry.getAvailable().filter((model) => !scoped.length || scoped.some((item) => item.model.provider === model.provider && item.model.id === model.id));
 }
 
-export function snapshot(ctx: ExtensionContext, streaming: StreamingMessage | null): SessionSnapshot {
-  const messages = ctx.sessionManager.getBranch().flatMap((entry) => projectEntry(entry) ?? []);
+export function snapshot(ctx: ExtensionContext, streaming: StreamingMessage | null, todoSource: TodoSource): SessionSnapshot {
+  const branch = ctx.sessionManager.getBranch();
+  const messages = branch.flatMap((entry) => projectEntry(entry) ?? []);
   const firstUser = messages.find((message) => message.role === "user")?.blocks.find((block) => block.kind === "text")?.text;
   return {
     schemaVersion: 1, sessionId: ctx.sessionManager.getSessionId(), cwd: ctx.cwd,
@@ -51,6 +53,7 @@ export function snapshot(ctx: ExtensionContext, streaming: StreamingMessage | nu
     model: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : null,
     thinkingLevel: ctx.thinkingLevel ?? null, idle: ctx.isIdle(), messages, streaming,
     contextUsage: ctx.getContextUsage() ?? null,
+    todos: projectTodos(branch, todoSource),
     models: availableModels(ctx).map(({ id, name, provider }) => ({ id, name, provider })),
   };
 }

@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import type { TerminalBridge } from "./bridge-client";
 import { Code } from "./code-highlight";
 import { usePreferences } from "./preferences";
+import { TodoPanel } from "./todo-panel";
 import { ToolCallDetail, ToolResult } from "./tool-content";
 
 function CodeFence({ source, children }: { source: string; children: React.ReactNode }) {
@@ -171,6 +172,7 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
         </button>)}
       </div>}
     </div>}
+    {connected && snapshot.todos && <TodoPanel todos={snapshot.todos} />}
     <div ref={feed} className="min-h-0 flex-1 overflow-auto px-2.5 py-2" onScroll={(event) => {
       const el = event.currentTarget;
       stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
