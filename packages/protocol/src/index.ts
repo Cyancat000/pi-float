@@ -27,7 +27,7 @@ interface MessageBase {
 
 export type ChatMessage = MessageBase & (
   | { role: "user" | "notice" }
-  | { role: "assistant"; usage?: TokenUsage; model?: string; error?: string }
+  | { role: "assistant"; usage?: TokenUsage; model?: string; error?: string; stopReason?: "aborted" | "error" }
   | { role: "tool"; toolCallId: string; toolName: string; isError: boolean }
 );
 
@@ -53,6 +53,18 @@ export interface TerminalModel { provider: string; id: string; name: string }
 
 export interface WorkspaceSession { id: string; label: string; modified: string }
 
+export interface SessionTreeEntry {
+  id: string;
+  parentId: string | null;
+  kind: "user" | "assistant" | "notice" | "summary" | "position";
+  landing: "before" | "at";
+  preview: string;
+  label?: string;
+}
+
+export interface SessionTree { leafId: string | null; entries: SessionTreeEntry[] }
+export interface RetryTarget { promptId: string; assistantId: string; leafId: string }
+
 export type TodoSource = "pi-float" | "rpiv-todo";
 export type TodoStatus = "pending" | "in_progress" | "completed";
 export interface TodoItem { id: number; subject: string; status: TodoStatus }
@@ -64,6 +76,9 @@ export interface SessionSnapshot extends ActiveSessionRegistration {
   streaming: StreamingMessage | null;
   contextUsage: ContextUsage | null;
   sessionActions?: boolean;
+  /** Undefined means the attached bridge does not support Tree. */
+  treeLeafId?: string | null;
+  retryTarget?: RetryTarget;
   todos?: TodoSnapshot;
   models?: TerminalModel[];
   commands?: { name: string; description?: string }[];
@@ -82,6 +97,9 @@ export type BridgeRequest = { requestId: string; sessionId: string } & (
   | { type: "command"; text: string }
   | { type: "list_sessions" | "new_session" }
   | { type: "resume_session"; targetId: string }
+  | { type: "get_tree" }
+  | { type: "navigate_tree"; targetId: string; expectedLeafId: string | null }
+  | { type: "retry_turn"; promptId: string; expectedLeafId: string }
   | { type: "abort" }
   | { type: "set_model"; provider: string; modelId: string }
 );
@@ -97,7 +115,15 @@ export interface NotificationEvent {
   message: string;
 }
 
-export type BridgeEvent = SyncEvent | NotificationEvent | { type: "request_result"; requestId: string; error?: string; sessions?: WorkspaceSession[] };
+export interface RequestResult {
+  type: "request_result";
+  requestId: string;
+  error?: string;
+  sessions?: WorkspaceSession[];
+  tree?: SessionTree;
+}
+
+export type BridgeEvent = SyncEvent | NotificationEvent | RequestResult;
 
 export interface ModuleVisibility {
   showThinking: boolean;

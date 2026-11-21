@@ -1,11 +1,12 @@
-import type { ChatMessage, ContextUsage, MessageBlock, ModuleVisibility, StreamingMessage, WorkspaceSession } from "@pi-float/protocol";
-import { ArrowUp, Check, Copy, Square } from "lucide-react";
+import type { ChatMessage, ContextUsage, MessageBlock, ModuleVisibility, SessionTree, StreamingMessage, WorkspaceSession } from "@pi-float/protocol";
+import { ArrowUp, Check, Copy, RotateCw, Square } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { TerminalBridge } from "./bridge-client";
 import { Code } from "./code-highlight";
 import { usePreferences } from "./preferences";
+import { SessionTreePanel } from "./session-tree";
 import { TodoPanel } from "./todo-panel";
 import { ToolCallDetail, ToolResult } from "./tool-content";
 
@@ -53,14 +54,15 @@ function Block({ block, modules, results }: { block: MessageBlock; modules: Modu
   return <MarkdownText text={block.text} />;
 }
 
-function Message({ message, modules, results }: { message: ChatMessage | StreamingMessage; modules: ModuleVisibility; results: Extract<ChatMessage, { role: "tool" }>[] }) {
+function Message({ message, modules, results, retry }: { message: ChatMessage | StreamingMessage; modules: ModuleVisibility; results: Extract<ChatMessage, { role: "tool" }>[]; retry?: { enabled: boolean; run: () => void } }) {
+  const stopReason = "stopReason" in message ? message.stopReason : undefined;
   const usage = modules.showTokenUsage && "usage" in message ? message.usage : undefined;
   const visibleBlocks = message.blocks.filter((block) => {
     if (block.kind === "thinking") return modules.showThinking;
     if (block.kind === "toolCall") return modules.showToolCalls;
     return true;
   });
-  if (message.role === "assistant" && !visibleBlocks.length && !("error" in message && message.error) && !usage) return null;
+  if (message.role === "assistant" && !visibleBlocks.length && !stopReason && !("error" in message && message.error) && !usage) return null;
   const label = message.role === "user" ? "你" : message.role === "assistant" ? "助手" : message.role === "tool" ? "工具结果 · " + message.toolName : "通知";
   const time = new Date(message.timestamp);
   return (
@@ -70,7 +72,13 @@ function Message({ message, modules, results }: { message: ChatMessage | Streami
         {modules.showTimestamp && !Number.isNaN(time.valueOf()) && <time dateTime={message.timestamp}>{time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time>}
       </header>
       {message.role === "tool" ? <ToolResult message={message} /> : message.blocks.map((block, index) => <Block key={index} block={block} modules={modules} results={results} />)}
-      {"error" in message && message.error && <p className="text-xs text-red-300" role="alert">{message.error}</p>}
+      {stopReason === "aborted" && <p className="text-xs text-amber-300">回复已中止</p>}
+      {(stopReason === "error" || ("error" in message && message.error)) && <p className="text-xs text-red-300" role="alert">{"error" in message && message.error ? message.error : "回复失败"}</p>}
+      {retry && <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+        <button type="button" className="inline-flex items-center gap-1 rounded border border-white/15 px-1.5 py-0.5 text-sky-300 hover:bg-white/10 disabled:opacity-40"
+          disabled={!retry.enabled} onClick={retry.run}><RotateCw size={12} />重试</button>
+        <span className="text-slate-400">从原提示重新生成，不撤销已执行的操作。</span>
+      </div>}
       {usage && <p className="mt-1 text-[11px] text-slate-400">
         {usage.totalTokens} tokens（输入 {usage.input} · 输出 {usage.output}{usage.cacheRead ? ` · 缓存读 ${usage.cacheRead}` : ""}{usage.cacheWrite ? ` · 缓存写 ${usage.cacheWrite}` : ""}{usage.reasoning !== undefined ? ` · 推理 ${usage.reasoning}` : ""}）
       </p>}
@@ -96,19 +104,63 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
   const [dismissed, setDismissed] = useState(false);
   const commandList = useRef<HTMLDivElement>(null);
   const [history, setHistory] = useState<WorkspaceSession[] | null>(null);
+  const [treeOpen, setTreeOpen] = useState(false);
+  const [tree, setTree] = useState<SessionTree | null>(null);
   const [changing, setChanging] = useState(false);
-  const sessionEnabled = ready && connected && snapshot?.sessionActions && !busy && !changing && !sending;
+  const treeSupported = snapshot?.treeLeafId !== undefined;
+  const canAct = ready && connected && !changing && !sending;
+  const sessionEnabled = canAct && snapshot?.sessionActions && !busy;
+  const treeStale = !!tree && tree.leafId !== snapshot?.treeLeafId;
+  const retryTarget = connected && !busy ? snapshot?.retryTarget : undefined;
   const commands = [...(snapshot?.commands ?? [])];
   if (snapshot?.sessionActions) commands.unshift({ name: "new", description: "在当前工作区新建会话" }, { name: "resume", description: "选择当前工作区的历史会话" });
   async function sessionAction(type: "new_session" | "list_sessions" | "resume_session", targetId?: string) {
     if (!sessionEnabled) return;
     setChanging(true);
+    setTreeOpen(false);
     try {
-      const rows = await terminal.request(type === "resume_session" ? { type, targetId: targetId! } : { type });
-      if (type === "list_sessions") setHistory(rows ?? []);
+      const result = await terminal.request(type === "resume_session" ? { type, targetId: targetId! } : { type });
+      if (type === "list_sessions") setHistory(result.sessions ?? []);
     } catch (error) { report(error); }
     finally { setChanging(false); }
   }
+
+  async function openTree() {
+    if (!canAct || !treeSupported) return;
+    setTreeOpen(true);
+    setTree(null);
+    setHistory(null);
+    setChanging(true);
+    try {
+      const result = await terminal.request({ type: "get_tree" });
+      if (!result.tree) throw new Error("终端未返回会话树");
+      setTree(result.tree);
+    } catch (error) { report(error); }
+    finally { setChanging(false); }
+  }
+
+  async function navigateTree(targetId: string) {
+    if (!canAct || busy || !tree || treeStale) return;
+    setChanging(true);
+    stick.current = true;
+    try {
+      await terminal.request({ type: "navigate_tree", expectedLeafId: tree.leafId, targetId });
+      setTreeOpen(false);
+    } catch (error) { report(error); }
+    finally { setChanging(false); }
+  }
+
+  async function retryTurn() {
+    if (!canAct || !retryTarget) return;
+    setChanging(true);
+    stick.current = true;
+    try {
+      await terminal.request({ type: "retry_turn", expectedLeafId: retryTarget.leafId, promptId: retryTarget.promptId });
+      setTreeOpen(false);
+    } catch (error) { report(error); }
+    finally { setChanging(false); }
+  }
+
   const menuOpen = connected && !dismissed && /^\/[^\s]*$/.test(draft);
   const matches = menuOpen ? commands.filter(({ name }) => name.toLowerCase().startsWith(draft.slice(1).toLowerCase()))
     .sort((a, b) => Number(b.name === draft.slice(1)) - Number(a.name === draft.slice(1)) || a.name.localeCompare(b.name)) : [];
@@ -163,8 +215,11 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
         <span className="min-w-0 flex-1 truncate" title={snapshot.name}>{snapshot.name || "当前会话"}</span>
         <button type="button" className="text-sky-300 disabled:opacity-40" disabled={!sessionEnabled} title={busy ? "请等待回复结束" : "在当前工作区新建会话"} onClick={() => void sessionAction("new_session")}>＋ 新建会话</button>
         <button type="button" className="text-sky-300 disabled:opacity-40" disabled={!sessionEnabled} aria-expanded={history !== null} onClick={() => history === null ? void sessionAction("list_sessions") : setHistory(null)}>历史会话</button>
+        {treeSupported && <button type="button" className="text-sky-300 disabled:opacity-40" disabled={!canAct} aria-expanded={treeOpen} onClick={() => treeOpen ? setTreeOpen(false) : void openTree()}>会话树</button>}
       </div>
-      {changing && <p role="status">正在处理会话操作…</p>}
+      {changing && !treeOpen && <p role="status">正在处理会话操作…</p>}
+      {treeOpen && <SessionTreePanel tree={tree} stale={treeStale} pending={changing} canRefresh={canAct} canNavigate={canAct && !busy}
+        onRefresh={() => void openTree()} onNavigate={(id) => void navigateTree(id)} onClose={() => setTreeOpen(false)} />}
       {history !== null && <div className="mt-1 max-h-36 overflow-auto" aria-label="当前工作区的历史会话">
         {!history.length && <p role="status">当前工作区没有其他历史会话</p>}
         {history.map(row => <button key={row.id} type="button" className="flex w-full gap-2 rounded px-1 py-1 text-left hover:bg-white/10" disabled={!sessionEnabled} onClick={() => void sessionAction("resume_session", row.id)}>
@@ -183,7 +238,9 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
         {terminal.connection === "failed" && <button type="button" className="mt-1 text-sky-300 underline" onClick={terminal.retry}>重新连接</button>}
       </div>}
       {connected && !messages.length && !busy && <div className="empty-chat">发送消息开始对话</div>}
-      {messages.map((message) => message.role === "tool" && (!modules.showToolCalls || matched.has(message.toolCallId)) ? null : <Message key={message.id} message={message} modules={modules} results={results} />)}
+      {messages.map((message) => message.role === "tool" && (!modules.showToolCalls || matched.has(message.toolCallId)) ? null :
+        <Message key={message.id} message={message} modules={modules} results={results}
+          retry={retryTarget?.assistantId === message.id ? { enabled: canAct, run: () => void retryTurn() } : undefined} />)}
       {snapshot?.streaming && <Message message={snapshot.streaming} modules={modules} results={results} />}
       {busy && !snapshot?.streaming && <p className="px-2 text-xs text-slate-400" role="status">正在等待回复…</p>}
     </div>
@@ -213,7 +270,7 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
         submit();
       }} />
       <div className="mt-1.5 flex items-center justify-between gap-1.5">
-        <select className="field model-select" aria-label="模型" disabled={!connected || busy || !terminalModels.length} value={snapshot?.model ?? ""} onChange={(event) => {
+        <select className="field model-select" aria-label="模型" disabled={!connected || busy || changing || !terminalModels.length} value={snapshot?.model ?? ""} onChange={(event) => {
           const model = terminalModels.find(({ provider, id }) => `${provider}/${id}` === event.currentTarget.value);
           if (model) void terminal.request({ type: "set_model", provider: model.provider, modelId: model.id }).catch(report);
         }}>

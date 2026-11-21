@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { SessionManager, type ExtensionAPI, type ExtensionContext, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import type { BridgeEvent, StreamingMessage, TodoSource, WorkspaceSession } from "@pi-float/protocol";
+import type { BridgeEvent, RequestResult, StreamingMessage, TodoSource } from "@pi-float/protocol";
 import type { WebSocket } from "ws";
 import { launchDesktop } from "./launcher.js";
 import { observeNotifications } from "./notifications.js";
 import { availableModels, contentBlocks, snapshot } from "./projection.js";
 import { registerNativeTodo, selectTodoSource } from "./todos.js";
 import { transport } from "./transport.js";
+import { findRetry, projectTree } from "./tree.js";
 
 export default function piFloat(pi: ExtensionAPI): void {
   let ctx: ExtensionContext | undefined;
@@ -19,8 +20,8 @@ export default function piFloat(pi: ExtensionAPI): void {
   const { publish, send } = transport;
   let pendingAction: { nonce: string; run(ctx: ExtensionCommandContext): Promise<void> } | undefined;
 
-  // Only a registered slash command receives Pi's session replacement API.
-  function runSessionAction(sessionId: string, path?: string) {
+  // Pi exposes session replacement and tree navigation only in slash command context.
+  function runCommandAction(sessionId: string, run: (active: ExtensionCommandContext) => Promise<void>) {
     if (!pi.getCommands().some(cmd => cmd.name === "ui")) throw new Error("/ui 命令不可用");
     return new Promise<void>((resolve, reject) => {
       const nonce = randomUUID();
@@ -29,8 +30,7 @@ export default function piFloat(pi: ExtensionAPI): void {
         clearTimeout(timer);
         try {
           if (active.sessionManager.getSessionId() !== sessionId || !active.isIdle()) throw new Error("终端忙碌或会话已切换");
-          const result = path ? await active.switchSession(path) : await active.newSession();
-          if (result.cancelled) throw new Error("会话操作已取消");
+          await run(active);
           resolve();
         } catch (error) { reject(error); }
       } };
@@ -39,8 +39,29 @@ export default function piFloat(pi: ExtensionAPI): void {
     });
   }
 
+  function runSessionAction(sessionId: string, path?: string) {
+    return runCommandAction(sessionId, async (active) => {
+      const result = path ? await active.switchSession(path) : await active.newSession();
+      if (result.cancelled) throw new Error("会话操作已取消");
+    });
+  }
+
   function sessionSnapshot(active: ExtensionContext) {
-    return { ...snapshot(active, streaming, todoSource), sessionActions: true, commands: pi.getCommands().map(({ name, description }) => ({ name, description })) };
+    const retry = active.isIdle() && active.model ? findRetry(active.sessionManager) : undefined;
+    return {
+      ...snapshot(active, streaming, todoSource), sessionActions: true, treeLeafId: active.sessionManager.getLeafId(),
+      retryTarget: retry ? { promptId: retry.promptId, assistantId: retry.assistantId, leafId: retry.leafId } : undefined,
+      commands: pi.getCommands().map(({ name, description }) => ({ name, description })),
+    };
+  }
+
+  function checkTreePosition(active: ExtensionContext, expectedLeafId: unknown) {
+    if (active.sessionManager.getLeafId() !== expectedLeafId) throw new Error("会话位置已变化，请刷新后重试");
+  }
+
+  async function navigate(active: ExtensionCommandContext, targetId: string) {
+    const result = await active.navigateTree(targetId, { summarize: false });
+    if (result.cancelled) throw new Error("会话切换已取消");
   }
 
   function publishSnapshot() {
@@ -61,7 +82,7 @@ export default function piFloat(pi: ExtensionAPI): void {
   async function dispatch(socket: WebSocket, text: string) {
     let requestId: string | undefined;
     let error: string | undefined;
-    let sessions: WorkspaceSession[] | undefined;
+    const result: Pick<RequestResult, "sessions" | "tree"> = {};
     try {
       const request = JSON.parse(text);
       if (!request || typeof request.requestId !== "string" || request.requestId.length > 128) throw new Error("无效请求");
@@ -70,6 +91,9 @@ export default function piFloat(pi: ExtensionAPI): void {
       if (!active || request.sessionId !== active.sessionManager.getSessionId()) throw new Error("终端会话已切换");
       if (request.type === "abort") {
         if (!active.isIdle()) active.abort();
+      } else if (request.type === "get_tree") {
+        result.tree = projectTree(active.sessionManager);
+        publishSnapshot();
       } else {
         if (commandPending) throw new Error("终端正在处理上一条指令");
         commandPending = true;
@@ -90,7 +114,7 @@ export default function piFloat(pi: ExtensionAPI): void {
             else {
               const history = await SessionManager.list(active.cwd, active.sessionManager.getSessionDir());
               if (ctx?.sessionManager.getSessionId() !== request.sessionId) throw new Error("会话已切换");
-              if (request.type === "list_sessions") sessions = history.filter(row => row.id !== request.sessionId).map(row => ({
+              if (request.type === "list_sessions") result.sessions = history.filter(row => row.id !== request.sessionId).map(row => ({
                 id: row.id, label: (row.name || row.firstMessage || "未命名会话").slice(0, 100), modified: row.modified.toISOString(),
               }));
               else {
@@ -99,6 +123,27 @@ export default function piFloat(pi: ExtensionAPI): void {
                 await runSessionAction(request.sessionId, target.path);
               }
             }
+          } else if (request.type === "navigate_tree" || request.type === "retry_turn") {
+            if (!active.isIdle()) throw new Error("请等待当前回复结束后再操作");
+            await runCommandAction(request.sessionId, async (command) => {
+              const session = command.sessionManager;
+              checkTreePosition(command, request.expectedLeafId);
+              if (request.type === "navigate_tree") {
+                if (typeof request.targetId !== "string" || !session.getEntry(request.targetId)) throw new Error("找不到会话节点");
+                await navigate(command, request.targetId);
+              } else {
+                const retry = findRetry(session);
+                if (!command.model || !retry || retry.promptId !== request.promptId) throw new Error("当前轮次无法重试");
+                const draft = command.ui.getEditorText();
+                await navigate(command, retry.promptId);
+                if (ctx?.sessionManager.getSessionId() !== request.sessionId || !command.isIdle()) throw new Error("会话已切换或终端忙碌，未发送重试");
+                checkTreePosition(command, retry.parentId);
+                // Pi refills an empty TUI editor on a user-node jump. Undo only that refill, not existing input.
+                if (!draft.trim() && command.ui.getEditorText() === retry.text) command.ui.setEditorText(draft);
+                pi.sendUserMessage(retry.text, { expandPromptTemplates: false });
+              }
+              publishSnapshot();
+            });
           } else if (request.type === "set_model") {
             if (!active.isIdle()) throw new Error("请等待当前回复结束后切换模型");
             if (typeof request.provider !== "string" || typeof request.modelId !== "string") throw new Error("无效模型");
@@ -110,7 +155,7 @@ export default function piFloat(pi: ExtensionAPI): void {
         } finally { commandPending = false; }
       }
     } catch (cause) { error = cause instanceof Error ? cause.message : "终端指令失败"; }
-    if (requestId !== undefined) send(socket, JSON.stringify({ type: "request_result", requestId, sessions, ...(error ? { error } : {}) } satisfies BridgeEvent));
+    if (requestId !== undefined) send(socket, JSON.stringify({ type: "request_result", requestId, ...result, ...(error ? { error } : {}) } satisfies BridgeEvent));
     else socket.close(1008, "invalid request");
   }
 

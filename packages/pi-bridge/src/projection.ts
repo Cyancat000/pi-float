@@ -32,6 +32,7 @@ export function projectEntry(entry: SessionEntry): ChatMessage | null {
   const { usage } = message;
   return {
     ...base, role: "assistant", blocks: contentBlocks(message.content), model: `${message.provider}/${message.model}`,
+    ...(message.stopReason === "aborted" || message.stopReason === "error" ? { stopReason: message.stopReason } : {}),
     ...(message.stopReason === "error" && message.errorMessage ? { error: message.errorMessage } : {}),
     usage: { input: usage.input, output: usage.output, cacheRead: usage.cacheRead, cacheWrite: usage.cacheWrite,
       reasoning: usage.reasoning, totalTokens: usage.totalTokens, cost: usage.cost.total },
