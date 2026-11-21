@@ -1,0 +1,14 @@
+{
+  "name": "pi-float",
+  "version": "0.1.0-beta.1",
+  "private": true,
+  "packageManager": "pnpm@10.29.2",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "scripts": {
+    "check": "pnpm -r run check",
+    "build": "pnpm -r run build",
+    "dev": "pnpm --filter @pi-float/desktop dev"
+  }
+}

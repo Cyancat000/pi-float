@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "pi-float",
+  "version": "0.1.0-beta.1",
+  "identifier": "app.pifloat.desktop",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "pi-float",
+        "width": 380,
+        "height": 560,
+        "minWidth": 320,
+        "minHeight": 400,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": true
+      },
+      {
+        "label": "settings",
+        "title": "pi-float 设置",
+        "width": 640,
+        "height": 480,
+        "center": true,
+        "visible": false,
+        "focus": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src ipc: http://ipc.localhost ws://127.0.0.1:*"
+    }
+  },
+  "bundle": {
+    "active": false
+  }
+}

@@ -1,0 +1,149 @@
+import type { BridgeEvent, BridgeRequest, SessionSnapshot, TerminalRegistration } from "@pi-float/protocol";
+import { invoke } from "@tauri-apps/api/core";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { create } from "zustand";
+
+export interface LaunchTarget { cwd: string | null; port: number | null }
+type Command = { type: "send"; text: string } | { type: "abort" } | { type: "set_model"; provider: string; modelId: string };
+const useRemote = create<{ snapshot: SessionSnapshot | null; connection: "connecting" | "connected" | "disconnected" }>(() => ({
+  snapshot: null, connection: "disconnected",
+}));
+
+export function sessionKey(row: TerminalRegistration) { return `${row.pid}:${row.port}:${row.startedAt}`; }
+export function projectFolder(cwd: string) { return cwd.split(/[/\\]/).filter(Boolean).at(-1) ?? cwd; }
+
+export class BridgeClient {
+  private socket: WebSocket | undefined;
+  private timer: number | undefined;
+  private stopped = false;
+  private pending = new Map<string, { resolve: () => void; reject: (error: Error) => void; timer: number }>();
+
+  constructor(private port: number, private token: string) { this.connect(); }
+
+  private connect() {
+    useRemote.setState({ connection: "connecting" });
+    const socket = new WebSocket(`ws://127.0.0.1:${this.port}/`, ["pi-float.v1", this.token]);
+    this.socket = socket;
+    socket.onmessage = ({ data }) => {
+      if (this.socket !== socket || this.stopped || typeof data !== "string") return;
+      let event: BridgeEvent;
+      try { event = JSON.parse(data); } catch { return; }
+      if (event.type === "request_result") {
+        const entry = this.pending.get(event.requestId);
+        if (!entry) return;
+        this.pending.delete(event.requestId);
+        clearTimeout(entry.timer);
+        if (event.error) entry.reject(new Error(event.error)); else entry.resolve();
+      } else if (event.type === "snapshot" && event.session.schemaVersion === 1) {
+        useRemote.setState({ snapshot: event.session, connection: "connected" });
+      } else if (event.type === "stream") {
+        const { snapshot } = useRemote.getState();
+        if (snapshot?.sessionId === event.sessionId) useRemote.setState({ snapshot: { ...snapshot, streaming: event.message } });
+      }
+    };
+    socket.onclose = () => {
+      if (this.socket !== socket || this.stopped) return;
+      this.failPending();
+      useRemote.setState({ connection: "disconnected" });
+      this.timer = window.setTimeout(() => this.connect(), 1250);
+    };
+  }
+
+  private failPending() {
+    for (const entry of this.pending.values()) {
+      clearTimeout(entry.timer);
+      entry.reject(new Error("终端连接已关闭"));
+    }
+    this.pending.clear();
+  }
+
+  request(command: Command): Promise<void> {
+    const { snapshot, connection } = useRemote.getState();
+    const socket = this.socket;
+    if (!snapshot || connection !== "connected" || socket?.readyState !== WebSocket.OPEN) return Promise.reject(new Error("尚未连接终端"));
+    const requestId = crypto.randomUUID();
+    const message: BridgeRequest = { ...command, requestId, sessionId: snapshot.sessionId };
+    return new Promise((resolve, reject) => {
+      const timer = window.setTimeout(() => {
+        this.pending.delete(requestId);
+        reject(new Error("终端未及时确认指令"));
+      }, 10_000);
+      this.pending.set(requestId, { resolve, reject, timer });
+      try { socket.send(JSON.stringify(message)); }
+      catch (error) { clearTimeout(timer); this.pending.delete(requestId); reject(error); }
+    });
+  }
+
+  close() {
+    this.stopped = true;
+    clearTimeout(this.timer);
+    this.socket?.close();
+    this.failPending();
+    useRemote.setState({ snapshot: null, connection: "disconnected" });
+  }
+}
+
+function normalizePath(path: string) {
+  const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  return /^([a-z]:|\/\/)/i.test(normalized) ? normalized.toLowerCase() : normalized;
+}
+
+export function useTerminalBridge(report: (error: unknown) => void) {
+  const [sessions, setSessions] = useState<TerminalRegistration[]>([]);
+  const [selected, setSelected] = useState("");
+  const [target, setTarget] = useState<(LaunchTarget & { expires: number })>();
+  const client = useRef<BridgeClient>(null);
+  const { snapshot, connection } = useRemote();
+
+  useEffect(() => {
+    let active = true;
+    let timer: number;
+    let warn = true;
+    async function refresh() {
+      try {
+        const rows = await invoke<TerminalRegistration[]>("terminal_sessions");
+        if (!active) return;
+        rows.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+        setSessions(rows);
+        setSelected((key) => key && !rows.some((row) => sessionKey(row) === key) ? "" : key);
+        warn = true;
+      } catch (error) {
+        if (active && warn) { warn = false; report(error); }
+      } finally { if (active) timer = window.setTimeout(refresh, 750); }
+    }
+    void refresh();
+    return () => { active = false; clearTimeout(timer); };
+  }, [report]);
+
+  useEffect(() => {
+    if (!target) return;
+    const match = target.port !== null ? sessions.find((row) => row.port === target.port)
+      : target.cwd ? sessions.find((row) => normalizePath(row.cwd) === normalizePath(target.cwd!)) : undefined;
+    if (match) { setSelected(sessionKey(match)); setTarget(undefined); }
+    else if (Date.now() >= target.expires) {
+      setTarget(undefined);
+      report("没有找到指定的 Pi 终端会话");
+    }
+  }, [sessions, target, report]);
+
+  const row = sessions.find((entry) => sessionKey(entry) === selected);
+  const port = row?.port;
+  const token = row?.token;
+  useEffect(() => {
+    if (!port || !token) return;
+    const active = new BridgeClient(port, token);
+    client.current = active;
+    return () => { client.current = null; active.close(); };
+  }, [port, token]);
+
+  const attach = useCallback((args: LaunchTarget) => {
+    if (args.port !== null || args.cwd) setTarget({ ...args, expires: Date.now() + 8000 });
+  }, []);
+  return {
+    sessions, selected, snapshot, connection, attach,
+    select(key: string) { setTarget(undefined); setSelected(key); },
+    request(command: Command) { return client.current?.request(command) ?? Promise.reject(new Error("尚未连接终端")); },
+  };
+}
+
+export type TerminalBridge = ReturnType<typeof useTerminalBridge>;
