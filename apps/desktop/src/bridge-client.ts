@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { create } from "zustand";
 
 export interface LaunchTarget { cwd: string | null; port: number | null }
-type Command = { type: "send"; text: string } | { type: "abort" } | { type: "set_model"; provider: string; modelId: string };
+type Command = { type: "send"; text: string } | { type: "command"; text: string } | { type: "abort" } | { type: "set_model"; provider: string; modelId: string };
 const useRemote = create<{ snapshot: SessionSnapshot | null; connection: "connecting" | "connected" | "disconnected" | "failed" }>(() => ({
   snapshot: null, connection: "disconnected",
 }));

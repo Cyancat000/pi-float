@@ -57,6 +57,7 @@ export interface SessionSnapshot extends ActiveSessionRegistration {
   streaming: StreamingMessage | null;
   contextUsage: ContextUsage | null;
   models?: TerminalModel[];
+  commands?: { name: string; description?: string }[];
 }
 
 export type StreamingMessage = MessageBase & { role: "assistant" };
@@ -69,6 +70,7 @@ export type SyncEvent =
 
 export type BridgeRequest = { requestId: string; sessionId: string } & (
   | { type: "send"; text: string }
+  | { type: "command"; text: string }
   | { type: "abort" }
   | { type: "set_model"; provider: string; modelId: string }
 );

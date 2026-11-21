@@ -31,8 +31,12 @@ export default function piFloat(pi: ExtensionAPI): void {
     for (const socket of sockets.clients) send(socket, data);
   }
 
+  function sessionSnapshot(active: ExtensionContext) {
+    return { ...snapshot(active, streaming), commands: pi.getCommands().map(({ name, description }) => ({ name, description })) };
+  }
+
   function publishSnapshot() {
-    if (ctx && sockets?.clients.size) publish({ type: "snapshot", session: snapshot(ctx, streaming) });
+    if (ctx && sockets?.clients.size) publish({ type: "snapshot", session: sessionSnapshot(ctx) });
   }
 
   function updateContext(active: ExtensionContext) {
@@ -73,6 +77,12 @@ export default function piFloat(pi: ExtensionAPI): void {
             if (typeof request.text !== "string" || !request.text.trim() || request.text.length > 32_000) throw new Error("请输入 1–32000 字符的消息");
             if (/^\s*[!/]/.test(request.text)) throw new Error("请在终端直接执行斜杠或 Shell 指令");
             pi.sendUserMessage(request.text, { expandPromptTemplates: true, ...(active.isIdle() ? {} : { deliverAs: "steer" }) });
+          } else if (request.type === "command") {
+            if (!active.isIdle()) throw new Error("请等待当前回复结束后执行命令");
+            const text = request.text;
+            const name = typeof text === "string" && text.match(/^\/([^\s/]+)(?: |$)/)?.[1];
+            if (!name || text.length > 32_000 || !pi.getCommands().some((cmd) => cmd.name === name)) throw new Error("当前终端不支持从浮窗执行此命令");
+            pi.sendUserMessage(text, { expandPromptTemplates: true });
           } else if (request.type === "set_model") {
             if (!active.isIdle()) throw new Error("请等待当前回复结束后切换模型");
             if (typeof request.provider !== "string" || typeof request.modelId !== "string") throw new Error("无效模型");
@@ -106,7 +116,7 @@ export default function piFloat(pi: ExtensionAPI): void {
     wss.on("connection", (socket) => {
       socket.on("error", () => socket.terminate());
       if (!ctx) { socket.close(1012); return; }
-      send(socket, JSON.stringify({ type: "snapshot", session: snapshot(ctx, streaming) } satisfies BridgeEvent));
+      send(socket, JSON.stringify({ type: "snapshot", session: sessionSnapshot(ctx) } satisfies BridgeEvent));
       socket.on("message", (data, binary) => {
         if (binary) socket.close(1003);
         else void dispatch(socket, data.toString());

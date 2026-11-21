@@ -115,7 +115,18 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
   const stick = useRef(true);
   const [sending, setSending] = useState(false);
   const busy = snapshot?.idle === false;
-  const canSend = ready && connected && !sending && !!draft.trim();
+  const [choice, setChoice] = useState(0);
+  const [dismissed, setDismissed] = useState(false);
+  const commandList = useRef<HTMLDivElement>(null);
+  const commands = snapshot?.commands ?? [];
+  const menuOpen = connected && !dismissed && /^\/[^\s]*$/.test(draft);
+  const matches = menuOpen ? commands.filter(({ name }) => name.toLowerCase().startsWith(draft.slice(1).toLowerCase()))
+    .sort((a, b) => Number(b.name === draft.slice(1)) - Number(a.name === draft.slice(1)) || a.name.localeCompare(b.name)) : [];
+  const index = Math.min(choice, matches.length - 1);
+  useEffect(() => {
+    commandList.current?.children[index]?.scrollIntoView({ block: "nearest" });
+  }, [index, draft]);
+  const canSend = ready && connected && !sending && !!draft.trim() && !(busy && draft.trimStart().startsWith("/"));
   const messages = snapshot?.messages ?? [];
   const results = messages.filter((message) => message.role === "tool");
   const matched = new Set(messages.flatMap((message) => message.blocks.flatMap((block) => block.kind === "toolCall" ? [block.toolCallId] : [])));
@@ -134,14 +145,19 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
     if (stick.current && feed.current) feed.current.scrollTop = feed.current.scrollHeight;
   }, [snapshot?.messages, snapshot?.streaming, modules]);
 
-  function submit(event?: FormEvent<HTMLFormElement>) {
+  function submit(event?: FormEvent<HTMLFormElement>, value = draft) {
     event?.preventDefault();
     if (!canSend) return;
-    const text = draft.trim();
+    const text = value.trim();
+    const isCommand = text.startsWith("/");
+    if (isCommand && !commands.some(({ name }) => name === text.slice(1).split(/\s/, 1)[0])) {
+      report(snapshot?.commands ? "此命令不在当前会话列表中；仅限终端的命令请在 Pi 中执行。" : "请先在 Pi 终端重新加载 pi-float 扩展以启用命令。");
+      return;
+    }
     setDraft("");
     stick.current = true;
     setSending(true);
-    void terminal.request({ type: "send", text }).catch((error) => {
+    void terminal.request({ type: isCommand ? "command" : "send", text }).catch((error) => {
       setDraft((current) => current || text);
       report(error);
     }).finally(() => setSending(false));
@@ -162,9 +178,28 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
       {snapshot?.streaming && <Message message={snapshot.streaming} modules={modules} results={results} />}
       {busy && !snapshot?.streaming && <p className="px-2 text-xs text-slate-400" role="status">正在等待回复…</p>}
     </div>
-    <form className="shrink-0 border-t border-white/12 p-2" onSubmit={submit}>
-      <textarea ref={input} rows={1} className="field block w-full resize-none" aria-label="消息" placeholder={busy ? "插话给终端…" : "输入消息…"} value={draft} disabled={!connected || !ready} onChange={(event) => setDraft(event.currentTarget.value)} onKeyDown={(event) => {
-        if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing || event.keyCode === 229) return;
+    <form className="relative shrink-0 border-t border-white/12 p-2" onSubmit={submit}>
+      {menuOpen && <div className="absolute inset-x-2 bottom-full z-10 rounded-lg border border-white/15 bg-[#252b37] p-1 text-xs shadow-lg">
+        <p className="px-2 py-1 text-slate-400">{busy ? "终端忙碌中，结束后可执行命令" : "↑↓ 选择 · Tab 补全 · Enter 或点击执行"}</p>
+        <div id="pi-commands" ref={commandList} role="listbox" aria-label="Pi 命令" className="max-h-48 overflow-y-auto">
+          {matches.map(({ name, description }, i) => <button type="button" tabIndex={-1} role="option" id={`pi-command-${i}`} aria-selected={index === i} key={`${name}:${i}`} title={description}
+            className={`block w-full truncate rounded px-2 py-1 text-left ${index === i ? "bg-sky-800" : "hover:bg-white/10"}`}
+            onMouseDown={(e) => e.preventDefault()} onClick={() => submit(undefined, `/${name}`)}>/{name} <span className="text-slate-300">{description}</span></button>)}
+        </div>
+        {!matches.length && <p className="px-2 py-1">{snapshot?.commands ? "没有匹配的命令" : "请在终端重新加载 pi-float 扩展"}</p>}
+      </div>}
+      <textarea ref={input} rows={1} className="field block w-full resize-none" aria-label="消息" placeholder={busy ? "插话给终端…" : "输入消息…"} value={draft} disabled={!connected || !ready} aria-controls={menuOpen ? "pi-commands" : undefined} aria-activedescendant={index >= 0 ? `pi-command-${index}` : undefined}
+        onChange={(event) => { setDraft(event.currentTarget.value); setChoice(0); setDismissed(false); }} onKeyDown={(event) => {
+        if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+        if (menuOpen && event.key === "Escape") { event.preventDefault(); setDismissed(true); return; }
+        if (index >= 0 && !event.shiftKey) {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault(); setChoice((index + (event.key === "ArrowDown" ? 1 : -1) + matches.length) % matches.length); return;
+          }
+          if (event.key === "Tab") { event.preventDefault(); setDraft(`/${matches[index].name} `); return; }
+          if (event.key === "Enter") { event.preventDefault(); submit(undefined, `/${matches[index].name}`); return; }
+        }
+        if (event.key !== "Enter" || event.shiftKey) return;
         event.preventDefault();
         submit();
       }} />
