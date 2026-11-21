@@ -6,4 +6,5 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   clearScreen: false,
   server: { host: "127.0.0.1", port: 1420, strictPort: true },
+  build: { rollupOptions: { output: { manualChunks: (id) => /\/highlight\.js\/(?:lib|es)\//.test(id) ? "highlight" : undefined } } },
 });

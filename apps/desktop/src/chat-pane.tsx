@@ -1,27 +1,12 @@
 import type { ChatMessage, ContextUsage, MessageBlock, ModuleVisibility, StreamingMessage, WorkspaceSession } from "@pi-float/protocol";
-import hljs from "highlight.js/lib/core";
-import bash from "highlight.js/lib/languages/bash";
-import javascript from "highlight.js/lib/languages/javascript";
-import json from "highlight.js/lib/languages/json";
-import python from "highlight.js/lib/languages/python";
-import typescript from "highlight.js/lib/languages/typescript";
 import { ArrowUp, Check, Copy, Square } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type ComponentPropsWithoutRef, type FormEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { TerminalBridge } from "./bridge-client";
+import { Code } from "./code-highlight";
 import { usePreferences } from "./preferences";
-import "highlight.js/styles/github-dark.css";
-
-for (const [name, language] of Object.entries({ bash, javascript, json, python, typescript })) hljs.registerLanguage(name, language);
-
-function Code({ className, children }: ComponentPropsWithoutRef<"code">) {
-  const code = String(children ?? "");
-  const language = className?.match(/\blanguage-([\w+-]+)/)?.[1];
-  if (!language || !hljs.getLanguage(language)) return <code className={className}>{children}</code>;
-  // highlight.js escapes the source before generating span markup.
-  return <code className={className} dangerouslySetInnerHTML={{ __html: hljs.highlight(code, { language }).value }} />;
-}
+import { ToolCallDetail, ToolResult } from "./tool-content";
 
 function CodeFence({ source, children }: { source: string; children: React.ReactNode }) {
   const [copied, setCopied] = useState(false);
@@ -60,18 +45,9 @@ function MarkdownText({ text }: { text: string }) {
   }}>{text}</Markdown></div>;
 }
 
-function ToolResult({ message }: { message: Extract<ChatMessage, { role: "tool" }> }) {
-  return <div className={message.isError ? "text-red-300" : "text-slate-300"}>
-    {message.blocks.map((block, index) => <pre key={index} className="wrap-anywhere whitespace-pre-wrap">{block.text}</pre>)}
-  </div>;
-}
-
 function Block({ block, modules, results }: { block: MessageBlock; modules: ModuleVisibility; results: Extract<ChatMessage, { role: "tool" }>[] }) {
   if (block.kind === "thinking") return modules.showThinking && <details className="chat-detail"><summary>思考过程</summary><MarkdownText text={block.text} /></details>;
-  if (block.kind === "toolCall") return modules.showToolCalls && <details className="chat-detail"><summary>工具调用 · {block.toolName || "等待名称"}</summary>
-    <pre className="wrap-anywhere whitespace-pre-wrap">{block.text}</pre>
-    {results.filter((item) => item.toolCallId === block.toolCallId).map((item) => <ToolResult key={item.id} message={item} />)}
-  </details>;
+  if (block.kind === "toolCall") return modules.showToolCalls && <ToolCallDetail block={block} results={results} />;
   if (block.kind === "image") return <p className="text-slate-400">{block.text}</p>;
   return <MarkdownText text={block.text} />;
 }
