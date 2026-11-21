@@ -1,4 +1,4 @@
-import type { ChatMessage, ContextUsage, MessageBlock, ModuleVisibility, StreamingMessage } from "@pi-float/protocol";
+import type { ChatMessage, ContextUsage, MessageBlock, ModuleVisibility, StreamingMessage, WorkspaceSession } from "@pi-float/protocol";
 import hljs from "highlight.js/lib/core";
 import bash from "highlight.js/lib/languages/bash";
 import javascript from "highlight.js/lib/languages/javascript";
@@ -118,7 +118,20 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
   const [choice, setChoice] = useState(0);
   const [dismissed, setDismissed] = useState(false);
   const commandList = useRef<HTMLDivElement>(null);
-  const commands = snapshot?.commands ?? [];
+  const [history, setHistory] = useState<WorkspaceSession[] | null>(null);
+  const [changing, setChanging] = useState(false);
+  const sessionEnabled = ready && connected && snapshot?.sessionActions && !busy && !changing && !sending;
+  const commands = [...(snapshot?.commands ?? [])];
+  if (snapshot?.sessionActions) commands.unshift({ name: "new", description: "在当前工作区新建会话" }, { name: "resume", description: "选择当前工作区的历史会话" });
+  async function sessionAction(type: "new_session" | "list_sessions" | "resume_session", targetId?: string) {
+    if (!sessionEnabled) return;
+    setChanging(true);
+    try {
+      const rows = await terminal.request(type === "resume_session" ? { type, targetId: targetId! } : { type });
+      if (type === "list_sessions") setHistory(rows ?? []);
+    } catch (error) { report(error); }
+    finally { setChanging(false); }
+  }
   const menuOpen = connected && !dismissed && /^\/[^\s]*$/.test(draft);
   const matches = menuOpen ? commands.filter(({ name }) => name.toLowerCase().startsWith(draft.slice(1).toLowerCase()))
     .sort((a, b) => Number(b.name === draft.slice(1)) - Number(a.name === draft.slice(1)) || a.name.localeCompare(b.name)) : [];
@@ -126,7 +139,7 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
   useEffect(() => {
     commandList.current?.children[index]?.scrollIntoView({ block: "nearest" });
   }, [index, draft]);
-  const canSend = ready && connected && !sending && !!draft.trim() && !(busy && draft.trimStart().startsWith("/"));
+  const canSend = ready && connected && !changing && !sending && !!draft.trim() && !(busy && draft.trimStart().startsWith("/"));
   const messages = snapshot?.messages ?? [];
   const results = messages.filter((message) => message.role === "tool");
   const matched = new Set(messages.flatMap((message) => message.blocks.flatMap((block) => block.kind === "toolCall" ? [block.toolCallId] : [])));
@@ -149,6 +162,10 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
     event?.preventDefault();
     if (!canSend) return;
     const text = value.trim();
+    if (snapshot?.sessionActions && /^\/(new|resume)(?:\s|$)/.test(text)) {
+      if (text !== "/new" && text !== "/resume") { report("请直接使用 /new 或 /resume，不需要参数"); return; }
+      setDraft(""); void sessionAction(text === "/new" ? "new_session" : "list_sessions"); return;
+    }
     const isCommand = text.startsWith("/");
     if (isCommand && !commands.some(({ name }) => name === text.slice(1).split(/\s/, 1)[0])) {
       report(snapshot?.commands ? "此命令不在当前会话列表中；仅限终端的命令请在 Pi 中执行。" : "请先在 Pi 终端重新加载 pi-float 扩展以启用命令。");
@@ -164,6 +181,20 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
   }
 
   return <>
+    {snapshot?.sessionActions && <div className="shrink-0 border-b border-white/10 px-2 py-1 text-xs">
+      <div className="flex items-center gap-2">
+        <span className="min-w-0 flex-1 truncate" title={snapshot.name}>{snapshot.name || "当前会话"}</span>
+        <button type="button" className="text-sky-300 disabled:opacity-40" disabled={!sessionEnabled} title={busy ? "请等待回复结束" : "在当前工作区新建会话"} onClick={() => void sessionAction("new_session")}>＋ 新建会话</button>
+        <button type="button" className="text-sky-300 disabled:opacity-40" disabled={!sessionEnabled} aria-expanded={history !== null} onClick={() => history === null ? void sessionAction("list_sessions") : setHistory(null)}>历史会话</button>
+      </div>
+      {changing && <p role="status">正在处理会话操作…</p>}
+      {history !== null && <div className="mt-1 max-h-36 overflow-auto" aria-label="当前工作区的历史会话">
+        {!history.length && <p role="status">当前工作区没有其他历史会话</p>}
+        {history.map(row => <button key={row.id} type="button" className="flex w-full gap-2 rounded px-1 py-1 text-left hover:bg-white/10" disabled={!sessionEnabled} onClick={() => void sessionAction("resume_session", row.id)}>
+          <span className="flex-1 truncate" title={row.label}>{row.label}</span><time className="text-slate-400">{new Date(row.modified).toLocaleString()}</time>
+        </button>)}
+      </div>}
+    </div>}
     <div ref={feed} className="min-h-0 flex-1 overflow-auto px-2.5 py-2" onScroll={(event) => {
       const el = event.currentTarget;
       stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;

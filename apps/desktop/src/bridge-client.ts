@@ -1,10 +1,11 @@
-import type { BridgeEvent, BridgeRequest, NotificationEvent, SessionSnapshot, TerminalRegistration } from "@pi-float/protocol";
+import type { BridgeEvent, BridgeRequest, NotificationEvent, SessionSnapshot, TerminalRegistration, WorkspaceSession } from "@pi-float/protocol";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { create } from "zustand";
 
 export interface LaunchTarget { cwd: string | null; port: number | null }
-type Command = { type: "send"; text: string } | { type: "command"; text: string } | { type: "abort" } | { type: "set_model"; provider: string; modelId: string };
+type Payload<T> = T extends unknown ? Omit<T, "requestId" | "sessionId"> : never;
+type Command = Payload<BridgeRequest>;
 const useRemote = create<{
   snapshot: SessionSnapshot | null;
   connection: "connecting" | "connected" | "disconnected" | "failed";
@@ -43,7 +44,7 @@ export class BridgeClient {
       this.timer = window.setTimeout(() => this.connect(), 1250);
     }
   }
-  private pending = new Map<string, { resolve: () => void; reject: (error: Error) => void; timer: number }>();
+  private pending = new Map<string, { resolve: (sessions?: WorkspaceSession[]) => void; reject: (error: Error) => void; timer: number }>();
 
   constructor(private port: number, private token: string) { this.connect(); }
 
@@ -68,7 +69,7 @@ export class BridgeClient {
         if (!entry) return;
         this.pending.delete(event.requestId);
         clearTimeout(entry.timer);
-        if (event.error) entry.reject(new Error(event.error)); else entry.resolve();
+        if (event.error) entry.reject(new Error(event.error)); else entry.resolve(event.sessions);
       } else if (event.type === "snapshot" && event.session.schemaVersion === 1) {
         clearTimeout(this.timer);
         this.attempts = 0;
@@ -103,7 +104,7 @@ export class BridgeClient {
     this.pending.clear();
   }
 
-  request(command: Command): Promise<void> {
+  request(command: Command): Promise<WorkspaceSession[] | undefined> {
     const { snapshot, connection } = useRemote.getState();
     const socket = this.socket;
     if (!snapshot || connection !== "connected" || socket?.readyState !== WebSocket.OPEN) return Promise.reject(new Error("尚未连接终端"));

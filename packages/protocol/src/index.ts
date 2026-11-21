@@ -51,11 +51,14 @@ export interface TerminalRegistration {
 
 export interface TerminalModel { provider: string; id: string; name: string }
 
+export interface WorkspaceSession { id: string; label: string; modified: string }
+
 export interface SessionSnapshot extends ActiveSessionRegistration {
   schemaVersion: 1;
   messages: ChatMessage[];
   streaming: StreamingMessage | null;
   contextUsage: ContextUsage | null;
+  sessionActions?: boolean;
   models?: TerminalModel[];
   commands?: { name: string; description?: string }[];
 }
@@ -71,6 +74,8 @@ export type SyncEvent =
 export type BridgeRequest = { requestId: string; sessionId: string } & (
   | { type: "send"; text: string }
   | { type: "command"; text: string }
+  | { type: "list_sessions" | "new_session" }
+  | { type: "resume_session"; targetId: string }
   | { type: "abort" }
   | { type: "set_model"; provider: string; modelId: string }
 );
@@ -86,7 +91,7 @@ export interface NotificationEvent {
   message: string;
 }
 
-export type BridgeEvent = SyncEvent | NotificationEvent | { type: "request_result"; requestId: string; error?: string };
+export type BridgeEvent = SyncEvent | NotificationEvent | { type: "request_result"; requestId: string; error?: string; sessions?: WorkspaceSession[] };
 
 export interface ModuleVisibility {
   showThinking: boolean;

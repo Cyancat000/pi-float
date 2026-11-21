@@ -1,45 +1,47 @@
-import { randomBytes, timingSafeEqual } from "node:crypto";
-import { createServer } from "node:http";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { BridgeEvent, StreamingMessage, TerminalRegistration } from "@pi-float/protocol";
-import { WebSocket, WebSocketServer } from "ws";
+import { randomUUID } from "node:crypto";
+import { SessionManager, type ExtensionAPI, type ExtensionContext, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { BridgeEvent, StreamingMessage, WorkspaceSession } from "@pi-float/protocol";
+import type { WebSocket } from "ws";
 import { launchDesktop } from "./launcher.js";
 import { observeNotifications } from "./notifications.js";
 import { availableModels, contentBlocks, snapshot } from "./projection.js";
-import { updateRegistry } from "./registry.js";
-
-const protocol = "pi-float.v1";
-const desktopOrigins = new Set(["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost", "http://127.0.0.1:1420"]);
+import { transport } from "./transport.js";
 
 export default function piFloat(pi: ExtensionAPI): void {
   let ctx: ExtensionContext | undefined;
   let streaming: StreamingMessage | null = null;
   let lastStreamAt = 0;
-  let registration: TerminalRegistration | undefined;
   let commandPending = false;
-  let stopServer: (() => Promise<void>) | undefined;
-  let sockets: WebSocketServer | undefined;
   let unobserveNotifications: (() => void) | undefined;
-  let notificationSequence = 0;
+  const { publish, send } = transport;
+  let pendingAction: { nonce: string; run(ctx: ExtensionCommandContext): Promise<void> } | undefined;
 
-  function send(socket: WebSocket, data: string) {
-    if (socket.readyState !== WebSocket.OPEN) return;
-    if (socket.bufferedAmount > 16 * 1024 * 1024) socket.terminate();
-    else socket.send(data);
-  }
-
-  function publish(event: BridgeEvent) {
-    if (!sockets?.clients.size) return;
-    const data = JSON.stringify(event);
-    for (const socket of sockets.clients) send(socket, data);
+  // Only a registered slash command receives Pi's session replacement API.
+  function runSessionAction(sessionId: string, path?: string) {
+    if (!pi.getCommands().some(cmd => cmd.name === "ui")) throw new Error("/ui 命令不可用");
+    return new Promise<void>((resolve, reject) => {
+      const nonce = randomUUID();
+      const timer = setTimeout(() => { pendingAction = undefined; reject(new Error("终端未执行会话操作")); }, 5000);
+      pendingAction = { nonce, async run(active) {
+        clearTimeout(timer);
+        try {
+          if (active.sessionManager.getSessionId() !== sessionId || !active.isIdle()) throw new Error("终端忙碌或会话已切换");
+          const result = path ? await active.switchSession(path) : await active.newSession();
+          if (result.cancelled) throw new Error("会话操作已取消");
+          resolve();
+        } catch (error) { reject(error); }
+      } };
+      try { pi.sendUserMessage(`/ui ${nonce}`, { expandPromptTemplates: true }); }
+      catch (error) { clearTimeout(timer); pendingAction = undefined; reject(error); }
+    });
   }
 
   function sessionSnapshot(active: ExtensionContext) {
-    return { ...snapshot(active, streaming), commands: pi.getCommands().map(({ name, description }) => ({ name, description })) };
+    return { ...snapshot(active, streaming), sessionActions: true, commands: pi.getCommands().map(({ name, description }) => ({ name, description })) };
   }
 
   function publishSnapshot() {
-    if (ctx && sockets?.clients.size) publish({ type: "snapshot", session: sessionSnapshot(ctx) });
+    if (ctx && transport.hasClients) publish({ type: "snapshot", session: sessionSnapshot(ctx) });
   }
 
   function updateContext(active: ExtensionContext) {
@@ -53,17 +55,10 @@ export default function piFloat(pi: ExtensionAPI): void {
     publish({ type: "stream", sessionId: active.sessionManager.getSessionId(), message: null });
   }
 
-  function unregister() {
-    const row = registration;
-    if (!row) return;
-    registration = undefined;
-    try { updateRegistry((rows) => rows.filter(({ token }) => token !== row.token)); }
-    catch (error) { console.error("pi-float: 会话清理失败", error); }
-  }
-
   async function dispatch(socket: WebSocket, text: string) {
     let requestId: string | undefined;
     let error: string | undefined;
+    let sessions: WorkspaceSession[] | undefined;
     try {
       const request = JSON.parse(text);
       if (!request || typeof request.requestId !== "string" || request.requestId.length > 128) throw new Error("无效请求");
@@ -86,6 +81,21 @@ export default function piFloat(pi: ExtensionAPI): void {
             const name = typeof text === "string" && text.match(/^\/([^\s/]+)(?: |$)/)?.[1];
             if (!name || text.length > 32_000 || !pi.getCommands().some((cmd) => cmd.name === name)) throw new Error("当前终端不支持从浮窗执行此命令");
             pi.sendUserMessage(text, { expandPromptTemplates: true });
+          } else if (["list_sessions", "new_session", "resume_session"].includes(request.type)) {
+            if (!active.isIdle()) throw new Error("请等待当前回复结束后切换会话");
+            if (request.type === "new_session") await runSessionAction(request.sessionId);
+            else {
+              const history = await SessionManager.list(active.cwd, active.sessionManager.getSessionDir());
+              if (ctx?.sessionManager.getSessionId() !== request.sessionId) throw new Error("会话已切换");
+              if (request.type === "list_sessions") sessions = history.filter(row => row.id !== request.sessionId).map(row => ({
+                id: row.id, label: (row.name || row.firstMessage || "未命名会话").slice(0, 100), modified: row.modified.toISOString(),
+              }));
+              else {
+                const target = history.find(row => row.id === request.targetId && row.id !== request.sessionId);
+                if (!target) throw new Error("当前工作区中找不到此历史会话");
+                await runSessionAction(request.sessionId, target.path);
+              }
+            }
           } else if (request.type === "set_model") {
             if (!active.isIdle()) throw new Error("请等待当前回复结束后切换模型");
             if (typeof request.provider !== "string" || typeof request.modelId !== "string") throw new Error("无效模型");
@@ -97,57 +107,8 @@ export default function piFloat(pi: ExtensionAPI): void {
         } finally { commandPending = false; }
       }
     } catch (cause) { error = cause instanceof Error ? cause.message : "终端指令失败"; }
-    if (requestId !== undefined) send(socket, JSON.stringify({ type: "request_result", requestId, ...(error ? { error } : {}) } satisfies BridgeEvent));
+    if (requestId !== undefined) send(socket, JSON.stringify({ type: "request_result", requestId, sessions, ...(error ? { error } : {}) } satisfies BridgeEvent));
     else socket.close(1008, "invalid request");
-  }
-
-  async function startServer(active: ExtensionContext) {
-    const token = randomBytes(32).toString("hex");
-    const server = createServer((_req, res) => { res.writeHead(404).end(); });
-    const wss = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024, handleProtocols: () => protocol });
-    server.on("upgrade", (req, socket, head) => {
-      const offered = (req.headers["sec-websocket-protocol"] ?? "").split(",").map((part) => part.trim());
-      const candidate = offered.find((part) => /^[a-f0-9]{64}$/.test(part));
-      const origin = req.headers.origin;
-      if (!ctx || req.url !== "/" || (origin && !desktopOrigins.has(origin)) || !offered.includes(protocol)
-        || !candidate || !timingSafeEqual(Buffer.from(candidate), Buffer.from(token))) {
-        socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
-        return;
-      }
-      wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws));
-    });
-    wss.on("connection", (socket) => {
-      socket.on("error", () => socket.terminate());
-      if (!ctx) { socket.close(1012); return; }
-      send(socket, JSON.stringify({ type: "snapshot", session: sessionSnapshot(ctx) } satisfies BridgeEvent));
-      socket.on("message", (data, binary) => {
-        if (binary) socket.close(1003);
-        else void dispatch(socket, data.toString());
-      });
-    });
-    const stop = async () => {
-      process.off("exit", unregister);
-      unregister();
-      sockets = undefined;
-      for (const socket of wss.clients) socket.terminate();
-      wss.close();
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-    };
-    try {
-      await new Promise<void>((resolve, reject) => {
-        server.once("error", reject);
-        server.listen(0, "127.0.0.1", () => { server.off("error", reject); resolve(); });
-      });
-      server.on("error", (error) => console.error("pi-float: WebSocket 服务错误", error));
-      const address = server.address();
-      if (!address || typeof address === "string") throw new Error("无法获取本地监听端口");
-      sockets = wss;
-      const row = { pid: process.pid, cwd: active.cwd, sessionId: active.sessionManager.getSessionId(), port: address.port, startedAt: new Date().toISOString(), token };
-      updateRegistry((rows) => [...rows.filter(({ pid }) => pid !== row.pid), row]);
-      registration = row;
-      process.on("exit", unregister);
-      stopServer = stop;
-    } catch (error) { await stop(); throw error; }
   }
 
   pi.on("session_start", async (_event, active) => {
@@ -156,17 +117,13 @@ export default function piFloat(pi: ExtensionAPI): void {
     const sessionId = active.sessionManager.getSessionId();
     unobserveNotifications?.();
     unobserveNotifications = observeNotifications(active.ui, (message, level) => {
-      if (registration?.sessionId !== sessionId || !sockets?.clients.size) return;
-      publish({ type: "notification", sessionId, sequence: ++notificationSequence, level, message });
+      if (transport.registration?.sessionId !== sessionId || !transport.hasClients) return;
+      publish({ type: "notification", sessionId, sequence: transport.nextSequence(), level, message });
     });
     try {
-      if (!registration) await startServer(active);
-      else {
-        const row = { ...registration, cwd: active.cwd, sessionId };
-        updateRegistry((rows) => [...rows.filter(({ pid }) => pid !== row.pid), row]);
-        registration = row;
-        publishSnapshot();
-      }
+      await transport.bind(active.cwd, sessionId, { dispatch, connected(socket) {
+        if (ctx) send(socket, JSON.stringify({ type: "snapshot", session: sessionSnapshot(ctx) } satisfies BridgeEvent));
+      } });
     } catch (error) { active.ui.notify(`pi-float: ${String(error)}`, "error"); }
   });
   pi.on("session_shutdown", async (event) => {
@@ -175,10 +132,7 @@ export default function piFloat(pi: ExtensionAPI): void {
     ctx = undefined;
     streaming = null;
     lastStreamAt = 0;
-    if (["new", "resume", "fork"].includes(event.reason)) return;
-    const stop = stopServer;
-    stopServer = undefined;
-    await stop?.();
+    await transport.detach(["new", "resume", "fork"].includes(event.reason));
   });
   pi.on("agent_start", (_event, active) => updateContext(active));
   pi.on("agent_end", (_event, active) => updateContext(active));
@@ -197,7 +151,7 @@ export default function piFloat(pi: ExtensionAPI): void {
   });
   pi.on("message_update", (event, active) => {
     ctx = active;
-    if (!sockets || event.message.role !== "assistant") return;
+    if (!transport.hasClients || event.message.role !== "assistant") return;
     streaming = { id: "stream", role: "assistant", timestamp: new Date(event.message.timestamp).toISOString(), blocks: contentBlocks(event.message.content) };
     const now = Date.now();
     if (now - lastStreamAt < 60) return;
@@ -207,7 +161,12 @@ export default function piFloat(pi: ExtensionAPI): void {
 
   pi.registerCommand("ui", {
     description: "Open this terminal session in pi-float",
-    handler: async (_args, active) => {
+    handler: async (args, active) => {
+      if (pendingAction && args === pendingAction.nonce) {
+        const action = pendingAction; pendingAction = undefined;
+        await action.run(active); return;
+      }
+      const { registration } = transport;
       if (!registration) { active.ui.notify("pi-float：当前终端未注册", "error"); return; }
       try { await launchDesktop(registration.port); }
       catch (error) { active.ui.notify(`pi-float: ${String(error)}`, "error"); }

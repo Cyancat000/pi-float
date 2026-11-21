@@ -81,7 +81,7 @@ export function MainWindow({ ready, report }: { ready: boolean; report: (error: 
         <button className="icon-button" type="button" title="设置" aria-label="设置" onClick={() => void invoke("open_settings").catch(report)}><Settings size={15} /></button>
         <button className="icon-button" type="button" title="隐藏到托盘" aria-label="隐藏到托盘" onClick={() => void mainWindow.hide().catch(report)}><Minus size={17} /></button>
       </header>
-      {selected ? <ChatPane key={selected} terminal={bridge} ready={ready} report={report} /> : (
+      {selected ? <ChatPane key={`${selected}:${bridge.snapshot?.sessionId ?? ""}`} terminal={bridge} ready={ready} report={report} /> : (
         <div className="min-h-0 flex-1">
           <p className="empty-chat" role="status">
             <span>{sessions.length ? "从顶栏选择要附着的 Pi 终端。" : <>暂无可附着的终端。请在已加载 pi-float 扩展的 Pi 终端中运行 <code>/ui</code>。</>}</span>
