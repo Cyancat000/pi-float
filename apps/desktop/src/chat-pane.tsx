@@ -152,7 +152,11 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
       const el = event.currentTarget;
       stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
     }}>
-      {!connected && <p className="px-2 py-1 text-xs text-slate-400" role="status">正在连接 Pi 终端…</p>}
+      {!connected && <div className="px-2 py-1 text-xs text-slate-400">
+        <p role="status">{terminal.connection === "failed" ? "无法读取 Pi 终端会话。请确认终端仍在运行，或在目标终端执行 /ui 重新附着。"
+          : terminal.connection === "disconnected" ? "连接已断开，即将重试…" : "正在连接 Pi 终端…"}</p>
+        {terminal.connection === "failed" && <button type="button" className="mt-1 text-sky-300 underline" onClick={terminal.retry}>重新连接</button>}
+      </div>}
       {connected && !messages.length && !busy && <div className="empty-chat">发送消息开始对话</div>}
       {messages.map((message) => message.role === "tool" && (!modules.showToolCalls || matched.has(message.toolCallId)) ? null : <Message key={message.id} message={message} modules={modules} results={results} />)}
       {snapshot?.streaming && <Message message={snapshot.streaming} modules={modules} results={results} />}

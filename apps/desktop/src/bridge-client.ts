@@ -5,7 +5,7 @@ import { create } from "zustand";
 
 export interface LaunchTarget { cwd: string | null; port: number | null }
 type Command = { type: "send"; text: string } | { type: "abort" } | { type: "set_model"; provider: string; modelId: string };
-const useRemote = create<{ snapshot: SessionSnapshot | null; connection: "connecting" | "connected" | "disconnected" }>(() => ({
+const useRemote = create<{ snapshot: SessionSnapshot | null; connection: "connecting" | "connected" | "disconnected" | "failed" }>(() => ({
   snapshot: null, connection: "disconnected",
 }));
 
@@ -16,14 +16,42 @@ export class BridgeClient {
   private socket: WebSocket | undefined;
   private timer: number | undefined;
   private stopped = false;
+  private attempts = 0;
+
+  retry() {
+    if (!this.stopped && useRemote.getState().connection === "failed") {
+      this.attempts = 0;
+      this.connect();
+    }
+  }
+
+  private failedAttempt() {
+    clearTimeout(this.timer);
+    this.socket = undefined;
+    this.failPending();
+    if (this.attempts >= 3) {
+      useRemote.setState({ connection: "failed" });
+    } else {
+      useRemote.setState({ connection: "disconnected" });
+      this.timer = window.setTimeout(() => this.connect(), 1250);
+    }
+  }
   private pending = new Map<string, { resolve: () => void; reject: (error: Error) => void; timer: number }>();
 
   constructor(private port: number, private token: string) { this.connect(); }
 
   private connect() {
     useRemote.setState({ connection: "connecting" });
-    const socket = new WebSocket(`ws://127.0.0.1:${this.port}/`, ["pi-float.v1", this.token]);
+    this.attempts++;
+    let socket: WebSocket;
+    try { socket = new WebSocket(`ws://127.0.0.1:${this.port}/`, ["pi-float.v1", this.token]); }
+    catch { this.failedAttempt(); return; }
     this.socket = socket;
+    // Opening the socket alone is not enough: wait for a usable session snapshot.
+    this.timer = window.setTimeout(() => {
+      this.failedAttempt();
+      socket.close();
+    }, 8000);
     socket.onmessage = ({ data }) => {
       if (this.socket !== socket || this.stopped || typeof data !== "string") return;
       let event: BridgeEvent;
@@ -35,6 +63,8 @@ export class BridgeClient {
         clearTimeout(entry.timer);
         if (event.error) entry.reject(new Error(event.error)); else entry.resolve();
       } else if (event.type === "snapshot" && event.session.schemaVersion === 1) {
+        clearTimeout(this.timer);
+        this.attempts = 0;
         useRemote.setState({ snapshot: event.session, connection: "connected" });
       } else if (event.type === "stream") {
         const { snapshot } = useRemote.getState();
@@ -43,9 +73,7 @@ export class BridgeClient {
     };
     socket.onclose = () => {
       if (this.socket !== socket || this.stopped) return;
-      this.failPending();
-      useRemote.setState({ connection: "disconnected" });
-      this.timer = window.setTimeout(() => this.connect(), 1250);
+      this.failedAttempt();
     };
   }
 
@@ -119,12 +147,17 @@ export function useTerminalBridge(report: (error: unknown) => void) {
     if (!target) return;
     const match = target.port !== null ? sessions.find((row) => row.port === target.port)
       : target.cwd ? sessions.find((row) => normalizePath(row.cwd) === normalizePath(target.cwd!)) : undefined;
-    if (match) { setSelected(sessionKey(match)); setTarget(undefined); }
+    if (match) {
+      const key = sessionKey(match);
+      if (key === selected) client.current?.retry();
+      setSelected(key);
+      setTarget(undefined);
+    }
     else if (Date.now() >= target.expires) {
       setTarget(undefined);
       report("没有找到指定的 Pi 终端会话");
     }
-  }, [sessions, target, report]);
+  }, [sessions, selected, target, report]);
 
   const row = sessions.find((entry) => sessionKey(entry) === selected);
   const port = row?.port;
@@ -141,6 +174,7 @@ export function useTerminalBridge(report: (error: unknown) => void) {
   }, []);
   return {
     sessions, selected, snapshot, connection, attach,
+    retry() { client.current?.retry(); },
     select(key: string) { setTarget(undefined); setSelected(key); },
     request(command: Command) { return client.current?.request(command) ?? Promise.reject(new Error("尚未连接终端")); },
   };
