@@ -1,13 +1,19 @@
-import type { BridgeEvent, BridgeRequest, SessionSnapshot, TerminalRegistration } from "@pi-float/protocol";
+import type { BridgeEvent, BridgeRequest, NotificationEvent, SessionSnapshot, TerminalRegistration } from "@pi-float/protocol";
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { create } from "zustand";
 
 export interface LaunchTarget { cwd: string | null; port: number | null }
 type Command = { type: "send"; text: string } | { type: "command"; text: string } | { type: "abort" } | { type: "set_model"; provider: string; modelId: string };
-const useRemote = create<{ snapshot: SessionSnapshot | null; connection: "connecting" | "connected" | "disconnected" | "failed" }>(() => ({
-  snapshot: null, connection: "disconnected",
-}));
+const useRemote = create<{
+  snapshot: SessionSnapshot | null;
+  connection: "connecting" | "connected" | "disconnected" | "failed";
+  notifications: NotificationEvent[];
+}>(() => ({ snapshot: null, connection: "disconnected", notifications: [] }));
+
+function dismissNotification(notification: NotificationEvent) {
+  useRemote.setState(({ notifications }) => ({ notifications: notifications.filter((item) => item !== notification) }));
+}
 
 export function sessionKey(row: TerminalRegistration) { return `${row.pid}:${row.port}:${row.startedAt}`; }
 export function projectFolder(cwd: string) { return cwd.split(/[/\\]/).filter(Boolean).at(-1) ?? cwd; }
@@ -17,6 +23,7 @@ export class BridgeClient {
   private timer: number | undefined;
   private stopped = false;
   private attempts = 0;
+  private lastNotificationSequence = 0;
 
   retry() {
     if (!this.stopped && useRemote.getState().connection === "failed") {
@@ -30,9 +37,9 @@ export class BridgeClient {
     this.socket = undefined;
     this.failPending();
     if (this.attempts >= 3) {
-      useRemote.setState({ connection: "failed" });
+      useRemote.setState({ connection: "failed", notifications: [] });
     } else {
-      useRemote.setState({ connection: "disconnected" });
+      useRemote.setState({ connection: "disconnected", notifications: [] });
       this.timer = window.setTimeout(() => this.connect(), 1250);
     }
   }
@@ -65,7 +72,18 @@ export class BridgeClient {
       } else if (event.type === "snapshot" && event.session.schemaVersion === 1) {
         clearTimeout(this.timer);
         this.attempts = 0;
-        useRemote.setState({ snapshot: event.session, connection: "connected" });
+        useRemote.setState(({ snapshot, notifications }) => ({
+          snapshot: event.session,
+          connection: "connected",
+          notifications: snapshot?.sessionId === event.session.sessionId ? notifications : [],
+        }));
+      } else if (event.type === "notification") {
+        const { snapshot, connection, notifications } = useRemote.getState();
+        if (connection !== "connected" || snapshot?.sessionId !== event.sessionId
+          || !Number.isSafeInteger(event.sequence) || event.sequence <= this.lastNotificationSequence
+          || typeof event.message !== "string" || !["info", "warning", "error"].includes(event.level)) return;
+        this.lastNotificationSequence = event.sequence;
+        useRemote.setState({ notifications: [...notifications.slice(-4), event] });
       } else if (event.type === "stream") {
         const { snapshot } = useRemote.getState();
         if (snapshot?.sessionId === event.sessionId) useRemote.setState({ snapshot: { ...snapshot, streaming: event.message } });
@@ -107,7 +125,7 @@ export class BridgeClient {
     clearTimeout(this.timer);
     this.socket?.close();
     this.failPending();
-    useRemote.setState({ snapshot: null, connection: "disconnected" });
+    useRemote.setState({ snapshot: null, connection: "disconnected", notifications: [] });
   }
 }
 
@@ -121,7 +139,7 @@ export function useTerminalBridge(report: (error: unknown) => void) {
   const [selected, setSelected] = useState("");
   const [target, setTarget] = useState<(LaunchTarget & { expires: number })>();
   const client = useRef<BridgeClient>(null);
-  const { snapshot, connection } = useRemote();
+  const { snapshot, connection, notifications } = useRemote();
 
   useEffect(() => {
     let active = true;
@@ -162,7 +180,7 @@ export function useTerminalBridge(report: (error: unknown) => void) {
   const row = sessions.find((entry) => sessionKey(entry) === selected);
   const port = row?.port;
   const token = row?.token;
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!port || !token) return;
     const active = new BridgeClient(port, token);
     client.current = active;
@@ -173,7 +191,7 @@ export function useTerminalBridge(report: (error: unknown) => void) {
     if (args.port !== null || args.cwd) setTarget({ ...args, expires: Date.now() + 8000 });
   }, []);
   return {
-    sessions, selected, snapshot, connection, attach,
+    sessions, selected, snapshot, connection, attach, notifications, dismissNotification,
     retry() { client.current?.retry(); },
     select(key: string) { setTarget(undefined); setSelected(key); },
     request(command: Command) { return client.current?.request(command) ?? Promise.reject(new Error("尚未连接终端")); },

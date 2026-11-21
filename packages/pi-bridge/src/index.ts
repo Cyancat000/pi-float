@@ -4,6 +4,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import type { BridgeEvent, StreamingMessage, TerminalRegistration } from "@pi-float/protocol";
 import { WebSocket, WebSocketServer } from "ws";
 import { launchDesktop } from "./launcher.js";
+import { observeNotifications } from "./notifications.js";
 import { availableModels, contentBlocks, snapshot } from "./projection.js";
 import { updateRegistry } from "./registry.js";
 
@@ -18,6 +19,8 @@ export default function piFloat(pi: ExtensionAPI): void {
   let commandPending = false;
   let stopServer: (() => Promise<void>) | undefined;
   let sockets: WebSocketServer | undefined;
+  let unobserveNotifications: (() => void) | undefined;
+  let notificationSequence = 0;
 
   function send(socket: WebSocket, data: string) {
     if (socket.readyState !== WebSocket.OPEN) return;
@@ -150,10 +153,16 @@ export default function piFloat(pi: ExtensionAPI): void {
   pi.on("session_start", async (_event, active) => {
     if (active.mode !== "tui") return;
     ctx = active;
+    const sessionId = active.sessionManager.getSessionId();
+    unobserveNotifications?.();
+    unobserveNotifications = observeNotifications(active.ui, (message, level) => {
+      if (registration?.sessionId !== sessionId || !sockets?.clients.size) return;
+      publish({ type: "notification", sessionId, sequence: ++notificationSequence, level, message });
+    });
     try {
       if (!registration) await startServer(active);
       else {
-        const row = { ...registration, cwd: active.cwd, sessionId: active.sessionManager.getSessionId() };
+        const row = { ...registration, cwd: active.cwd, sessionId };
         updateRegistry((rows) => [...rows.filter(({ pid }) => pid !== row.pid), row]);
         registration = row;
         publishSnapshot();
@@ -161,6 +170,8 @@ export default function piFloat(pi: ExtensionAPI): void {
     } catch (error) { active.ui.notify(`pi-float: ${String(error)}`, "error"); }
   });
   pi.on("session_shutdown", async (event) => {
+    unobserveNotifications?.();
+    unobserveNotifications = undefined;
     ctx = undefined;
     streaming = null;
     lastStreamAt = 0;

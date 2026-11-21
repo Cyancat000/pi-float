@@ -5,6 +5,7 @@ import { ChevronDown, Contrast, Minus, Pin, PinOff, Settings } from "lucide-reac
 import { useEffect, useState } from "react";
 import { projectFolder, sessionKey, useTerminalBridge, type LaunchTarget } from "./bridge-client";
 import { ChatPane } from "./chat-pane";
+import { NotificationStack } from "./notification-stack";
 import { savePreference, usePreferences } from "./preferences";
 
 const mainWindow = getCurrentWindow();
@@ -50,7 +51,7 @@ export function MainWindow({ ready, report }: { ready: boolean; report: (error: 
   }
 
   return (
-    <div className="floating-shell flex h-full flex-col overflow-hidden" style={{ opacity }}>
+    <div className="floating-shell relative flex h-full flex-col overflow-hidden" style={{ opacity }}>
       <header className="flex h-[34px] shrink-0 items-center border-b border-white/10 pl-2 pr-1" data-tauri-drag-region>
         <label className="relative flex items-center">
           <span className="sr-only">Pi 终端</span>
@@ -87,6 +88,7 @@ export function MainWindow({ ready, report }: { ready: boolean; report: (error: 
           </p>
         </div>
       )}
+      <NotificationStack notices={bridge.notifications} dismiss={bridge.dismissNotification} />
     </div>
   );
 }

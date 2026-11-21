@@ -75,7 +75,18 @@ export type BridgeRequest = { requestId: string; sessionId: string } & (
   | { type: "set_model"; provider: string; modelId: string }
 );
 
-export type BridgeEvent = SyncEvent | { type: "request_result"; requestId: string; error?: string };
+export type NotificationLevel = "info" | "warning" | "error";
+
+export interface NotificationEvent {
+  type: "notification";
+  sessionId: string;
+  /** Strictly increasing for the lifetime of a bridge registration. */
+  sequence: number;
+  level: NotificationLevel;
+  message: string;
+}
+
+export type BridgeEvent = SyncEvent | NotificationEvent | { type: "request_result"; requestId: string; error?: string };
 
 export interface ModuleVisibility {
   showThinking: boolean;

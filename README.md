@@ -23,6 +23,7 @@ pi -e 'D:\pi-float\packages\pi-bridge\src\index.ts'
 
 - 在 Pi 输入 `/ui`，或从桌面顶栏选项目目录，附着该终端。也可用 `pi-float.exe --port <端口>` 或 `pi-float.exe --cwd <项目路径>` 启动或唤醒桌面窗；多个同目录会话时以端口精确指定。
 - 在浮窗消息框输入 `/` 可查看当前会话通过 Pi API 提供的扩展命令、提示模板和技能。继续输入过滤，用 ↑/↓ 选择，Tab 补全后可追加参数，Enter 或点击执行，Esc 关闭列表。命令需要终端空闲；Pi 自身的交互界面和命令确认仍在终端显示，未列出的 TUI 内置命令请在终端执行。更新后请在终端执行 `/reload` 再运行 `/ui`，以加载新版桥接扩展。
+- 当前附着会话的扩展通知（`ctx.ui.notify()`）会作为临时提示显示，不进入聊天历史。旧版桥接仍可附着和聊天，但不会转发通知。详见 [Pi 通知与 API 限制](docs/pi-notifications.md)。
 - 模型列表来自附着的 Pi 会话，切换模型也由 Pi 执行。插话交给 Pi 的 `steer` 队列；选择「未附着终端」只会断开悬浮窗，不会中止 Pi。
 - `/ui` 查找 `PI_FLOAT_BIN`、`PATH`、仓库中的 release/debug 二进制。开发时先运行 `tauri dev`；若自定义了构建路径，设置 `PI_FLOAT_BIN` 为二进制绝对路径。
 - 活跃终端和本地连接令牌在 `~/.pi-float/sessions.json`；不要共享该文件。
