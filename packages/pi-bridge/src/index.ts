@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { SessionManager, type ExtensionAPI, type ExtensionContext, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import type { BridgeEvent, RequestResult, StreamingMessage, TodoSource } from "@pi-float/protocol";
+import type { BridgeEvent, RequestResult, StreamingMessage, TodoSource } from "../../protocol/src/index.js";
 import type { WebSocket } from "ws";
 import { launchDesktop } from "./launcher.js";
 import { observeNotifications } from "./notifications.js";
@@ -8,6 +8,8 @@ import { availableModels, contentBlocks, snapshot } from "./projection.js";
 import { registerNativeTodo, selectTodoSource } from "./todos.js";
 import { transport } from "./transport.js";
 import { findRetry, projectTree } from "./tree.js";
+
+const FLOAT_COMMAND = "float-ui";
 
 export default function piFloat(pi: ExtensionAPI): void {
   let ctx: ExtensionContext | undefined;
@@ -22,7 +24,7 @@ export default function piFloat(pi: ExtensionAPI): void {
 
   // Pi exposes session replacement and tree navigation only in slash command context.
   function runCommandAction(sessionId: string, run: (active: ExtensionCommandContext) => Promise<void>) {
-    if (!pi.getCommands().some(cmd => cmd.name === "ui")) throw new Error("/ui 命令不可用");
+    if (!pi.getCommands().some(cmd => cmd.name === FLOAT_COMMAND)) throw new Error(`/${FLOAT_COMMAND} 命令不可用`);
     return new Promise<void>((resolve, reject) => {
       const nonce = randomUUID();
       const timer = setTimeout(() => { pendingAction = undefined; reject(new Error("终端未执行会话操作")); }, 5000);
@@ -34,7 +36,7 @@ export default function piFloat(pi: ExtensionAPI): void {
           resolve();
         } catch (error) { reject(error); }
       } };
-      try { pi.sendUserMessage(`/ui ${nonce}`, { expandPromptTemplates: true }); }
+      try { pi.sendUserMessage(`/${FLOAT_COMMAND} ${nonce}`, { expandPromptTemplates: true }); }
       catch (error) { clearTimeout(timer); pendingAction = undefined; reject(error); }
     });
   }
@@ -219,7 +221,7 @@ export default function piFloat(pi: ExtensionAPI): void {
     publish({ type: "stream", sessionId: active.sessionManager.getSessionId(), message: streaming });
   });
 
-  pi.registerCommand("ui", {
+  pi.registerCommand(FLOAT_COMMAND, {
     description: "Open this terminal session in pi-float",
     handler: async (args, active) => {
       if (pendingAction && args === pendingAction.nonce) {

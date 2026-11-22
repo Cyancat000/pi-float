@@ -1,7 +1,22 @@
 {
   "name": "pi-float",
-  "version": "0.1.0-beta.1",
+  "version": "1.0.0",
   "private": true,
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./packages/pi-bridge/src/index.ts"]
+  },
+  "dependencies": {
+    "ws": "^8.23.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": { "optional": true },
+    "typebox": { "optional": true }
+  },
   "packageManager": "pnpm@10.29.2",
   "engines": {
     "node": "^20.19.0 || >=22.12.0"

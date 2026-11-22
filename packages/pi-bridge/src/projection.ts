@@ -1,5 +1,5 @@
 import type { ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
-import type { ChatMessage, MessageBlock, SessionSnapshot, StreamingMessage, TodoSource } from "@pi-float/protocol";
+import type { ChatMessage, MessageBlock, SessionSnapshot, StreamingMessage, TodoSource } from "../../protocol/src/index.js";
 import { projectTodos } from "./todos.js";
 
 type Content =

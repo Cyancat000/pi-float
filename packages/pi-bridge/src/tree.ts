@@ -1,5 +1,5 @@
 import type { ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
-import type { RetryTarget, SessionTree, SessionTreeEntry } from "@pi-float/protocol";
+import type { RetryTarget, SessionTree, SessionTreeEntry } from "../../protocol/src/index.js";
 
 type Session = ExtensionContext["sessionManager"];
 

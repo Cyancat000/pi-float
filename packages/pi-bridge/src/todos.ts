@@ -1,5 +1,5 @@
 import type { ExtensionAPI, SessionEntry } from "@earendil-works/pi-coding-agent";
-import type { TodoItem, TodoSnapshot, TodoSource } from "@pi-float/protocol";
+import type { TodoItem, TodoSnapshot, TodoSource } from "../../protocol/src/index.js";
 import { Type } from "typebox";
 
 const nativeEntry = "pi-float-todo-state";

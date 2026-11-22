@@ -1,6 +1,6 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
-import type { BridgeEvent, TerminalRegistration } from "@pi-float/protocol";
+import type { BridgeEvent, TerminalRegistration } from "../../protocol/src/index.js";
 import { WebSocket, WebSocketServer } from "ws";
 import { updateRegistry } from "./registry.js";
 

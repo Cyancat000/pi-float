@@ -1,5 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { NotificationLevel } from "@pi-float/protocol";
+import type { NotificationLevel } from "../../protocol/src/index.js";
 
 // Pi 1.6.0 has no notification event. Its TUI extension runner exposes the same
 // mutable UI object to event and command contexts. Keep this adapter local to that

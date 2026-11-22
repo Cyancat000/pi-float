@@ -119,7 +119,40 @@ fn install_tray(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+#[cfg(all(windows, not(debug_assertions)))]
+fn register_desktop_path() -> std::io::Result<()> {
+    use std::io::{self, Write};
+
+    let exe = std::env::current_exe()?;
+    // Only register the distributed filename, not renamed backups or test copies.
+    if !exe
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("pi-float.exe"))
+    {
+        return Ok(());
+    }
+    let home = std::env::home_dir()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "missing home directory"))?;
+    let dir = home.join(".pi-float");
+    std::fs::create_dir_all(&dir)?;
+    let mut file = tempfile::NamedTempFile::new_in(&dir)?;
+    serde_json::to_writer(file.as_file_mut(), &exe)?;
+    file.flush()?;
+    file.persist(dir.join("desktop-path.json"))?;
+    Ok(())
+}
+
 fn main() {
+    // Run before the single-instance check so a manual launch can register a moved copy.
+    // A Pi-initiated launch (--port) should not change the user's registration.
+    #[cfg(all(windows, not(debug_assertions)))]
+    if std::env::args_os().len() == 1 {
+        if let Err(error) = register_desktop_path() {
+            eprintln!("register desktop: {error}");
+        }
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             let launch = LaunchArgs::parse(args).relative_to(std::path::Path::new(&cwd));

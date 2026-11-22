@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, write
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { TerminalRegistration } from "@pi-float/protocol";
+import type { TerminalRegistration } from "../../protocol/src/index.js";
 
 const dir = join(homedir(), ".pi-float");
 const path = join(dir, "sessions.json");
