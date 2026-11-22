@@ -25,10 +25,10 @@ export function SettingsWindow({ ready, report }: { ready: boolean; report: (err
         <fieldset className="theme-fieldset" disabled={!ready}>
           <legend>主题</legend>
           <div className="theme-grid">
-            {THEMES.map(({ id, name, description }) => (
+            {THEMES.map(({ id, name }) => (
               <label key={id} className="theme-choice">
                 <input type="radio" name="theme" value={id} className="sr-only" checked={theme === id}
-                  aria-label={name} aria-describedby={`theme-${id}-description`}
+                  aria-label={name}
                   onChange={() => void savePreference("theme", id).catch(report)} />
                 <span className="theme-card">
                   <span className="theme-preview" data-palette={id} aria-hidden="true">
@@ -37,7 +37,6 @@ export function SettingsWindow({ ready, report }: { ready: boolean; report: (err
                     <span className="theme-preview-composer"><i /><b /></span>
                   </span>
                   <span className="theme-name">{name}</span>
-                  <span id={`theme-${id}-description`} className="theme-description">{description}</span>
                 </span>
               </label>
             ))}

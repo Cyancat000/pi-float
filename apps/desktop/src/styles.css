@@ -221,7 +221,6 @@ button:disabled { cursor: default; }
 }
 .theme-name { display: flex; align-items: baseline; gap: 4px; justify-content: space-between; font-weight: 600; }
 .theme-choice input:checked + .theme-card .theme-name::after { content: "✓" / ""; color: var(--accent-ink); }
-.theme-description { color: var(--muted); font-size: 11px; }
 /* Scope tokens to the miniature, leaving card labels in the active theme. */
 .theme-preview { display: grid; grid-template-rows: 9px 1fr 12px; height: 48px; overflow: hidden; margin-bottom: 3px; border: 1px solid var(--frame-line); border-radius: 4px; background: var(--canvas); }
 .theme-preview-chrome { display: flex; align-items: center; gap: 3px; padding: 0 5px; background: var(--chrome); }
