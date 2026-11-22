@@ -17,12 +17,12 @@ export function SettingsWindow({ ready, report }: { ready: boolean; report: (err
   }
 
   return (
-    <main className="h-full overflow-auto bg-[#171b23] p-5 text-sm">
-      <h1 className="border-b border-white/10 pb-2 text-base font-semibold">模块显隐</h1>
+    <main className="settings-surface">
+      <h1 className="settings-heading">模块显隐</h1>
       {modules.map(([key, label]) => (
-        <label key={key} className="flex items-center justify-between border-b border-white/8 py-3">
+        <label key={key} className="settings-row">
           {label}
-          <input type="checkbox" role="switch" className="accent-sky-400" checked={visibility[key]} disabled={!ready || pending} onChange={(event) => setVisible(key, event.currentTarget.checked)} />
+          <input type="checkbox" role="switch" className="settings-switch" checked={visibility[key]} disabled={!ready || pending} onChange={(event) => setVisible(key, event.currentTarget.checked)} />
         </label>
       ))}
     </main>

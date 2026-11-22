@@ -34,7 +34,7 @@ function App() {
   return (
     <>
       {isSettings ? <SettingsWindow ready={ready} report={report} /> : <MainWindow ready={ready} report={report} />}
-      {error && <div role="alert" className="absolute inset-x-3 bottom-3 rounded bg-red-950 p-2 text-xs text-red-100"><button className="float-right ml-2" aria-label="关闭提示" onClick={() => setError("")}>×</button>{error}</div>}
+      {error && <div role="alert" className="toast toast-error absolute inset-x-3 bottom-3 z-40 p-2 text-xs"><button className="float-right ml-2" aria-label="关闭提示" onClick={() => setError("")}>×</button>{error}</div>}
     </>
   );
 }

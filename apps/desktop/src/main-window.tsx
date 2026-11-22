@@ -1,11 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { ChevronDown, Contrast, Minus, Pin, PinOff, Settings } from "lucide-react";
+import { Contrast, Minus, Pin, PinOff, Settings, Terminal } from "lucide-react";
 import { useEffect, useState } from "react";
 import { projectFolder, sessionKey, useTerminalBridge, type LaunchTarget } from "./bridge-client";
 import { ChatPane } from "./chat-pane";
 import { NotificationStack } from "./notification-stack";
+import { Picker } from "./picker";
 import { savePreference, usePreferences } from "./preferences";
 
 const mainWindow = getCurrentWindow();
@@ -52,16 +53,20 @@ export function MainWindow({ ready, report }: { ready: boolean; report: (error: 
 
   return (
     <div className="floating-shell relative flex h-full flex-col overflow-hidden" style={{ opacity }}>
-      <header className="flex h-[34px] shrink-0 items-center border-b border-white/10 pl-2 pr-1" data-tauri-drag-region>
-        <label className="relative flex items-center">
-          <span className="sr-only">Pi 终端</span>
-          <select className="mode-select max-w-[150px] truncate" value={selected} onChange={(event) => bridge.select(event.currentTarget.value)}>
-            <option value="">未附着终端</option>
-            {sessions.map((row) => <option key={sessionKey(row)} value={sessionKey(row)} title={row.cwd}>{projectFolder(row.cwd)}{sessions.filter(({ cwd }) => projectFolder(cwd) === projectFolder(row.cwd)).length > 1 ? " · " + row.pid : ""}</option>)}
-          </select>
-          <ChevronDown className="pointer-events-none absolute right-1.5" size={12} />
-        </label>
-        <div className="h-full flex-1 cursor-default" data-tauri-drag-region />
+      <header className="titlebar" data-tauri-drag-region>
+        <Picker label="Pi 终端" value={selected} onChange={bridge.select} fallback="未附着终端"
+          icon={<Terminal size={15} aria-hidden="true" />} options={sessions.length ? [
+            { value: "", label: "未附着终端" },
+            ...sessions.map((row) => {
+              const folder = projectFolder(row.cwd);
+              const duplicate = sessions.some((other) => other !== row && projectFolder(other.cwd) === folder);
+              return { value: sessionKey(row), label: duplicate ? `${folder} · ${row.pid}` : folder, detail: row.cwd };
+            }),
+          ] : []} />
+        <div className="h-full min-w-3 flex-1" data-tauri-drag-region />
+        <span className="connection-dot" data-state={selected ? bridge.connection : "none"}
+          title={!selected ? "未附着" : bridge.connection === "connected" ? "已连接" : "未连接"} />
+        <span className="toolbar-divider" />
         <button className="icon-button" type="button" title="置顶" aria-label="置顶" aria-pressed={alwaysOnTop} disabled={!ready || pinPending} onClick={() => void togglePin()}>
           {alwaysOnTop ? <Pin size={15} /> : <PinOff size={15} />}
         </button>
@@ -70,9 +75,9 @@ export function MainWindow({ ready, report }: { ready: boolean; report: (error: 
             <Contrast size={15} />
           </button>
           {showOpacity && (
-            <div className="absolute right-0 top-full z-10 mt-1 w-44 rounded-lg border border-white/15 bg-[#252b37] p-3 shadow-lg">
+            <div className="popup absolute right-0 top-full z-30 mt-1 w-44 p-3">
               <label className="text-xs" htmlFor="opacity">不透明度 <output>{Math.round(opacity * 100)}%</output></label>
-              <input id="opacity" className="mt-2 block w-full accent-sky-400" type="range" min="0.35" max="1" step="0.01" value={opacity}
+              <input id="opacity" className="mt-2 block w-full accent-(--accent)" type="range" min="0.35" max="1" step="0.01" value={opacity}
                 onChange={(event) => usePreferences.setState({ opacity: event.currentTarget.valueAsNumber })}
                 onPointerUp={commitOpacity} onKeyUp={commitOpacity} onBlur={commitOpacity} />
             </div>
@@ -83,9 +88,11 @@ export function MainWindow({ ready, report }: { ready: boolean; report: (error: 
       </header>
       {selected ? <ChatPane key={`${selected}:${bridge.snapshot?.sessionId ?? ""}`} terminal={bridge} ready={ready} report={report} /> : (
         <div className="min-h-0 flex-1">
-          <p className="empty-chat" role="status">
-            <span>{sessions.length ? "从顶栏选择要附着的 Pi 终端。" : <>暂无可附着的终端。请在已加载 pi-float 扩展的 Pi 终端中运行 <code>/ui</code>。</>}</span>
-          </p>
+          <div className="empty-chat" role="status">
+            <Terminal size={22} aria-hidden="true" />
+            <strong>未附着 Pi 终端</strong>
+            <p>{sessions.length ? "从顶栏选择要附着的 Pi 终端。" : <>请在已加载 pi-float 扩展的 Pi 终端中运行 <code>/ui</code>。</>}</p>
+          </div>
         </div>
       )}
       <NotificationStack notices={bridge.notifications} dismiss={bridge.dismissNotification} />

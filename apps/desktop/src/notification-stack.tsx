@@ -2,9 +2,9 @@ import type { NotificationEvent, NotificationLevel } from "@pi-float/protocol";
 import { useEffect } from "react";
 
 const presentation: Record<NotificationLevel, { label: string; color: string }> = {
-  info: { label: "Info", color: "border-sky-400/50 bg-slate-900 text-sky-100" },
-  warning: { label: "Warning", color: "border-amber-500/60 bg-amber-950 text-amber-100" },
-  error: { label: "Error", color: "border-red-500/60 bg-red-950 text-red-100" },
+  info: { label: "提示", color: "toast-info" },
+  warning: { label: "警告", color: "toast-warning" },
+  error: { label: "错误", color: "toast-error" },
 };
 
 type Props = { dismiss: (notice: NotificationEvent) => void };
@@ -17,11 +17,11 @@ function NotificationToast({ notice, dismiss }: Props & { notice: NotificationEv
 
   const { label, color } = presentation[notice.level];
   return (
-    <div className={"pointer-events-auto flex items-start gap-2 rounded-lg border p-2 text-xs shadow-lg " + color}>
+    <div className={"toast pointer-events-auto flex items-start gap-2 p-2 text-xs " + color}>
       <div className="min-w-0 flex-1 whitespace-pre-wrap break-words" role={notice.level === "error" ? "alert" : "status"}>
         <strong>{label}:</strong>{" "}{notice.message}
       </div>
-      <button type="button" aria-label="关闭通知" onClick={() => dismiss(notice)}>×</button>
+      <button className="icon-button" type="button" aria-label="关闭通知" onClick={() => dismiss(notice)}>×</button>
     </div>
   );
 }

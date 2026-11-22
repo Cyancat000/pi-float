@@ -17,7 +17,7 @@ import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
 import yaml from "highlight.js/lib/languages/yaml";
 import type { ComponentPropsWithoutRef } from "react";
-import "highlight.js/styles/github-dark.css";
+import "highlight.js/styles/github.css";
 
 for (const [name, language] of Object.entries({ bash, c, cpp, csharp, css, go, java, javascript, json, markdown, powershell, python, rust, sql, typescript, xml, yaml })) {
   hljs.registerLanguage(name, language);

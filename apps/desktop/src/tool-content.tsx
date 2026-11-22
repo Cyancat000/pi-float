@@ -44,7 +44,7 @@ function ToolCode({ source, language }: { source: string; language?: string }) {
 }
 
 export function ToolResult({ message, readLanguage }: { message: ToolMessage; readLanguage?: string }) {
-  return <div className={message.isError ? "text-red-300" : "text-slate-300"}>
+  return <div className={message.isError ? "error-text" : "secondary"}>
     {message.blocks.map((block, index) => <ToolCode key={index} source={block.text}
       language={!message.isError && message.toolName === "read" && block.kind === "text" ? readLanguage : undefined} />)}
   </div>;
@@ -74,7 +74,7 @@ function ToolCallBody({ block, results }: { block: ToolCall; results: ToolMessag
   return <>
     {source && <ToolCode source={source} language={language} />}
     {snippets.map(({ label, source, language }) => <div key={label} className="mt-1">
-      <div className="text-[11px] text-slate-400">{label}</div>
+      <div className="text-[11px] muted">{label}</div>
       <ToolCode source={source} language={language} />
     </div>)}
     {results.filter((item) => item.toolCallId === block.toolCallId).map((item) => <ToolResult key={item.id} message={item} readLanguage={readLanguage} />)}
