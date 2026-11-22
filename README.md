@@ -1,6 +1,6 @@
 # pi-float
 
-Pi 的暗色悬浮聊天窗。附着正在运行的 Pi 终端，沿用该会话的模型、工具和扩展。
+Pi 的悬浮聊天窗。附着正在运行的 Pi 终端，沿用该会话的模型、工具和扩展。
 
 ## 开发与安装扩展
 
@@ -21,6 +21,7 @@ pi -e 'D:\pi-float\packages\pi-bridge\src\index.ts'
 
 ## 使用
 
+- 在浮窗右上角打开「设置 → 外观 → 主题」。默认的 **Light** 保留原有浅灰配色；也可选择参考 [Atom One Dark](https://github.com/atom/one-dark-ui)、[GitHub Primer](https://github.com/primer/primitives)、[Nord](https://github.com/nordtheme/nord) 或 [Catppuccin Mocha](https://github.com/catppuccin/catppuccin) 的配色。选择后主窗和设置立即更新，重启后保留。
 - 在 Pi 输入 `/ui`，或从桌面顶栏选项目目录，附着该终端。也可用 `pi-float.exe --port <端口>` 或 `pi-float.exe --cwd <项目路径>` 启动或唤醒桌面窗；多个同目录会话时以端口精确指定。
 - 「＋ 新建会话」在当前终端的工作区开始新对话；「历史会话」列出该工作区其他已保存的会话，点击即可恢复。也可以在浮窗输入 `/new` 或 `/resume`。这些操作会同步切换终端和浮窗，不会删除原会话；回复过程中不可切换。
 - 「会话树」查看当前会话的分支。选中节点并确认后，用户消息会切到发送前，助手回复会保留到该节点；不生成摘要，旧分支仍可切回。只有 Pi 空闲时可以切换。

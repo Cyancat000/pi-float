@@ -1,5 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { StrictMode, useCallback, useEffect, useState } from "react";
+import { StrictMode, useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { MainWindow } from "./main-window";
 import { loadPreferences, usePreferences, watchPreferences } from "./preferences";
@@ -10,6 +10,9 @@ const currentWindow = getCurrentWindow();
 const isSettings = currentWindow.label === "settings";
 
 function App() {
+  const theme = usePreferences((prefs) => prefs.theme);
+  useLayoutEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
+
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
   const report = useCallback((cause: unknown) => {

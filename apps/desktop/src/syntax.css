@@ -1,0 +1,16 @@
+/* highlight.js token groups, colored by the active palette. */
+:is(.hljs-doctag, .hljs-keyword, .hljs-template-tag, .hljs-template-variable, .hljs-type, .hljs-variable.language_) { color: var(--syntax-keyword); }
+.hljs-title { color: var(--syntax-title); }
+:is(.hljs-attr, .hljs-attribute, .hljs-literal, .hljs-meta, .hljs-number, .hljs-operator, .hljs-variable, .hljs-selector-attr, .hljs-selector-class, .hljs-selector-id) { color: var(--syntax-literal); }
+.hljs-variable.language_ { color: var(--syntax-keyword); }
+:is(.hljs-regexp, .hljs-string) { color: var(--syntax-string); }
+:is(.hljs-built_in, .hljs-symbol) { color: var(--syntax-built-in); }
+:is(.hljs-comment, .hljs-code, .hljs-formula) { color: var(--syntax-comment); }
+:is(.hljs-name, .hljs-quote, .hljs-selector-tag, .hljs-selector-pseudo) { color: var(--syntax-tag); }
+.hljs-subst { color: var(--text); }
+.hljs-section { color: var(--syntax-literal); font-weight: bold; }
+.hljs-bullet { color: var(--syntax-bullet); }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: bold; }
+.hljs-addition { color: var(--success); background: var(--success-fill); }
+.hljs-deletion { color: var(--danger); background: var(--danger-fill); }
