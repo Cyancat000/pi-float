@@ -21,6 +21,7 @@ pi -e 'D:\pi-float\packages\pi-bridge\src\index.ts'
 
 ## 使用
 
+- 点击顶栏「紧凑模式」按钮，将浮窗缩为只显示最新一条聊天消息和当前待办的小窗。待办进度显示为已完成数 / 总数（如 `3/5`）；点击「恢复完整窗口」可回到原来的尺寸，输入草稿仍会保留。
 - 在浮窗右上角打开「设置 → 外观 → 主题」。默认的 **Light** 保留原有浅灰配色；也可选择参考 [Atom One Dark](https://github.com/atom/one-dark-ui)、[GitHub Primer](https://github.com/primer/primitives)、[Nord](https://github.com/nordtheme/nord) 或 [Catppuccin Mocha](https://github.com/catppuccin/catppuccin) 的配色。选择后主窗和设置立即更新，重启后保留。
 - 在 Pi 输入 `/ui`，或从桌面顶栏选项目目录，附着该终端。也可用 `pi-float.exe --port <端口>` 或 `pi-float.exe --cwd <项目路径>` 启动或唤醒桌面窗；多个同目录会话时以端口精确指定。
 - 「＋ 新建会话」在当前终端的工作区开始新对话；「历史会话」列出该工作区其他已保存的会话，点击即可恢复。也可以在浮窗输入 `/new` 或 `/resume`。这些操作会同步切换终端和浮窗，不会删除原会话；回复过程中不可切换。

@@ -114,7 +114,7 @@ function ContextMeter({ usage }: { usage: ContextUsage }) {
   return <span className="text-[11px] muted">上下文 {usage.tokens === null ? "—" : formatTokens(usage.tokens)} / {formatTokens(usage.contextWindow)}{usage.percent !== null && ` · ${Math.round(usage.percent)}%`}</span>;
 }
 
-export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge; ready: boolean; report: (error: unknown) => void }) {
+export function ChatPane({ terminal, ready, report, visible }: { terminal: TerminalBridge; ready: boolean; report: (error: unknown) => void; visible: boolean }) {
   const { snapshot } = terminal;
   const connected = terminal.connection === "connected" && !!snapshot;
   const modules = usePreferences((prefs) => prefs.modules);
@@ -233,8 +233,8 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
     : modelKey || "无终端模型";
 
   useLayoutEffect(() => {
-    if (stick.current && feed.current) feed.current.scrollTop = feed.current.scrollHeight;
-  }, [snapshot?.messages, snapshot?.streaming, modules, busy]);
+    if (visible && stick.current && feed.current) feed.current.scrollTop = feed.current.scrollHeight;
+  }, [snapshot?.messages, snapshot?.streaming, modules, busy, visible]);
 
   function submit(event?: FormEvent<HTMLFormElement>, command?: string) {
     event?.preventDefault();
@@ -288,7 +288,7 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
     </div>
     <div ref={feed} className="chat-feed" onScroll={(event) => {
       const el = event.currentTarget;
-      stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+      if (visible) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
     }}>
       <div>
         {!connected && <div className="px-2 py-1 text-xs muted">

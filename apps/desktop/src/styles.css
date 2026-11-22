@@ -42,6 +42,37 @@ button:disabled { cursor: default; }
   background: var(--chrome);
   user-select: none;
 }
+.compact-titlebar { height: 28px; }
+.compact-titlebar .icon-button { width: 25px; height: 23px; }
+.compact-title { color: var(--secondary); font-size: 11px; font-weight: 600; }
+.compact-pane { display: flex; flex: 1; min-height: 0; flex-direction: column; font-size: 12px; }
+.compact-message {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  line-height: 17px;
+  margin: 5px 8px;
+}
+.compact-todo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: auto;
+  padding: 4px 8px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--secondary);
+}
+.compact-progress {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--accent-fill);
+  color: var(--accent-ink);
+  font-variant-numeric: tabular-nums;
+}
 .toolbar-divider { width: 1px; height: 17px; margin: 0 3px; background: var(--control-line); }
 .connection-dot { width: 7px; height: 7px; flex: none; margin: 0 3px; border-radius: 50%; background: var(--muted); }
 .connection-dot[data-state="connected"] { background: var(--success); }
@@ -143,14 +174,18 @@ button:disabled { cursor: default; }
   width: 80%;
   margin: 3px auto;
   height: 4px;
-  background: linear-gradient(90deg, transparent, currentColor 50%, transparent);
+  --working-dim: color-mix(in srgb, currentColor 25%, transparent);
+  background: linear-gradient(90deg,
+    var(--working-dim) calc(41% - 8px),
+    currentColor calc(50% - 8px) calc(50% + 8px),
+    var(--working-dim) calc(59% + 8px)) center / 200% 100% no-repeat;
   mask-image: repeating-linear-gradient(90deg, #000 0 4px, transparent 4px 8px);
-  opacity: .75;
-  animation: working-pulse 1.8s ease-in-out infinite alternate;
+  animation: working-sweep 1.8s linear infinite alternate;
 }
-@keyframes working-pulse {
-  from { opacity: .35; }
-  to { opacity: 1; }
+/* With a double-width gradient, moving its midpoint from 100% to 0% covers the whole track. */
+@keyframes working-sweep {
+  from { background-position-x: 100%; }
+  to { background-position-x: 0%; }
 }
 .empty-chat { display: flex; min-height: 100%; flex-direction: column; justify-content: center; align-items: center; gap: 5px; padding: 12px; text-align: center; color: var(--muted); font-size: 12px; }
 .empty-chat > svg { margin-bottom: 3px; }
@@ -241,6 +276,7 @@ button:disabled { cursor: default; }
 @media (prefers-reduced-motion: reduce) {
   .settings-switch, .settings-switch::before { transition: none; }
   .popup, .popup-enter, .working-blocks::before { animation: none; }
+  .working-blocks::before { background: color-mix(in srgb, currentColor 55%, transparent); }
 }
 .toast { border: 1px solid var(--control-line); border-radius: 6px; background: var(--surface); box-shadow: var(--shadow); }
 .toast-info { border-left: 3px solid var(--accent); }
