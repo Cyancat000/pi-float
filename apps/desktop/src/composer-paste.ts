@@ -1,10 +1,15 @@
 import { invertedEffects, isolateHistory } from "@codemirror/commands";
-import { EditorState, StateEffect, StateField, type ChangeDesc, type Extension } from "@codemirror/state";
+import { EditorState, MapMode, StateEffect, StateField, type ChangeDesc, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 
-interface PasteRange { id: number; lines: number; from: number; to: number }
+interface PasteRange { id: number; lines?: number; from: number; to: number }
 
 function mapRange(range: PasteRange, changes: ChangeDesc): PasteRange | undefined {
+  if (range.lines === undefined) {
+    // Path text is editable; preserve its origin as long as its first character survives.
+    const from = changes.mapPos(range.from, 1, MapMode.TrackAfter);
+    return from === null ? undefined : { ...range, from, to: changes.mapPos(range.to, -1) };
+  }
   // An edit into a fold exposes any remaining text instead of hiding the edit.
   if (changes.touchesRange(range.from + 1, range.to - 1)) return undefined;
   return { ...range, from: changes.mapPos(range.from, 1), to: changes.mapPos(range.to, -1) };
@@ -25,8 +30,8 @@ class PasteLabel extends WidgetType {
   }
 }
 
-const pasteRanges = StateField.define<{ ranges: PasteRange[]; nextId: number }>({
-  create: () => ({ ranges: [], nextId: 1 }),
+const pasteRanges = StateField.define<{ ranges: PasteRange[]; nextId: number; nextPathId: number }>({
+  create: () => ({ ranges: [], nextId: 1, nextPathId: 1 }),
   update(value, tr) {
     const added = tr.effects.filter(effect => effect.is(addPaste)).map(effect => effect.value);
     const removed = new Set(tr.effects.filter(effect => effect.is(removePaste)).map(effect => effect.value));
@@ -35,7 +40,11 @@ const pasteRanges = StateField.define<{ ranges: PasteRange[]; nextId: number }>(
       const mapped = !removed.has(range.id) && mapRange(range, tr.changes);
       return mapped ? [mapped] : [];
     });
-    return { ranges: ranges.concat(added), nextId: Math.max(value.nextId, ...added.map(({ id }) => id + 1)) };
+    return {
+      ranges: ranges.concat(added),
+      nextId: Math.max(value.nextId, ...added.filter(({ id }) => id > 0).map(({ id }) => id + 1)),
+      nextPathId: Math.max(value.nextPathId, ...added.filter(({ id }) => id < 0).map(({ id }) => 1 - id)),
+    };
   },
 });
 
@@ -44,9 +53,9 @@ const pasteDecorations = StateField.define({
   update(value, tr) {
     const pastes = tr.state.field(pasteRanges);
     if (pastes === tr.startState.field(pasteRanges)) return value;
-    return Decoration.set(pastes.ranges.map(({ id, lines, from, to }) => Decoration.replace({
+    return Decoration.set(pastes.ranges.flatMap(({ id, lines, from, to }) => lines === undefined ? [] : [Decoration.replace({
       widget: new PasteLabel(`[粘贴内容 #${id} ${lines}行]`),
-    }).range(from, to)), true);
+    }).range(from, to)]), true);
   },
   provide: field => [EditorView.decorations.from(field), EditorView.atomicRanges.of(view => view.state.field(field))],
 });
@@ -57,8 +66,13 @@ export const foldPastes: Extension = [
   EditorState.transactionExtender.of(tr => {
     if (!tr.docChanged) return null;
     const effects: StateEffect<PasteRange>[] = [];
-    let { nextId, ranges } = tr.startState.field(pasteRanges);
-    if (tr.isUserEvent("input.paste")) {
+    let { nextId, nextPathId, ranges } = tr.startState.field(pasteRanges);
+    if (tr.isUserEvent("input.paste.path")) {
+      // Keep paths visible and editable, but never interpret a leading Unix path as a slash command.
+      tr.changes.iterChanges((_a, _b, from, to) => {
+        if (from !== to) effects.push(addPaste.of({ id: -nextPathId++, from, to }));
+      });
+    } else if (tr.isUserEvent("input.paste")) {
       tr.changes.iterChanges((_from, _to, from, to, inserted) => {
         const lines = inserted.lines - Number(inserted.lines > 1 && !inserted.line(inserted.lines).length);
         if (lines > 10 || inserted.length > 1000) effects.push(addPaste.of({ id: nextId++, lines, from, to }));
@@ -82,5 +96,5 @@ export function readComposerDraft(state: EditorState) {
   const text = state.doc.toString();
   const { ranges } = state.field(pasteRanges);
   const start = text.length - text.trimStart().length;
-  return { text, folded: ranges.length > 0, startsInPaste: ranges.some(({ from, to }) => from <= start && start < to) };
+  return { text, folded: ranges.some(({ lines }) => lines !== undefined), startsInPaste: ranges.some(({ from, to }) => from <= start && start < to) };
 }

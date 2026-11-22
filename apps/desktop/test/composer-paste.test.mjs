@@ -4,6 +4,7 @@ import { history, redo, undo } from "@codemirror/commands";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { foldPastes, readComposerDraft } from "../src/composer-paste.ts";
+import { formatPastedPaths, localFileUris } from "../src/clipboard.ts";
 
 const code = Array.from({ length: 12 }, (_, i) => `  const line${i} = ${i};\n`).join("");
 const editor = (doc = "") => EditorState.create({ doc, extensions: [history(), foldPastes] });
@@ -60,4 +61,31 @@ test("undo then redo restores the original paste and its label", () => {
   state = runHistory(redo, state);
   assert.equal(readComposerDraft(state).text, code);
   assert.deepEqual(folds(state), [[0, code.length, "[粘贴内容 #1 12行]"]]);
+});
+
+test("path pastes stay visible, survive edits and redo, and do not use fold numbers", () => {
+  const paths = Array.from({ length: 12 }, (_, i) => `/tmp/file-${i}`).join("\n");
+  let state = editor();
+  state = state.update({ changes: { from: 0, insert: paths }, userEvent: "input.paste.path" }).state;
+  assert.deepEqual(readComposerDraft(state), { text: paths, folded: false, startsInPaste: true });
+  state = runHistory(undo, state);
+  assert.equal(readComposerDraft(state).startsInPaste, false);
+  state = runHistory(redo, state);
+  state = state.update({ changes: { from: 10, insert: "x" } }).state;
+  assert.equal(readComposerDraft(state).startsInPaste, true);
+  state = paste(state, code);
+  assert.equal(folds(state)[0][2], "[粘贴内容 #1 12行]");
+});
+
+test("formats multiple paths with adjacent spacing and rejects control characters", () => {
+  assert.equal(formatPastedPaths(["C:\\My notes.txt", "D:\\图.png"], "o", "k"), " C:\\My notes.txt\nD:\\图.png ");
+  assert.equal(formatPastedPaths(["/tmp/screenshot.png"], "", " "), "/tmp/screenshot.png");
+  assert.throws(() => formatPastedPaths(["/tmp/a\nb"], "", ""), /控制字符/);
+});
+
+test("decodes local file URIs without treating web URLs as file paths", () => {
+  assert.deepEqual(localFileUris("# comment\r\nfile:///C:/My%20notes.txt\r\nfile://server/share/%E5%9B%BE.png", true), ["C:\\My notes.txt", "\\\\server\\share\\图.png"]);
+  assert.deepEqual(localFileUris("file:///tmp/a%20b.png", false), ["/tmp/a b.png"]);
+  assert.deepEqual(localFileUris("https://example.com/a.png", false), []);
+  assert.deepEqual(localFileUris("file:///tmp/a%0Ab.png", false), []);
 });

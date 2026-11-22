@@ -2,6 +2,7 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { useLayoutEffect, useRef } from "react";
+import { formatPastedPaths, readPathPaste } from "./clipboard";
 import { foldPastes, readComposerDraft } from "./composer-paste";
 
 interface ComposerOptions {
@@ -11,6 +12,7 @@ interface ComposerOptions {
   activeCommand: number;
   onEdit: (draft: ReturnType<typeof readComposerDraft>) => void;
   onKeyDown: (event: KeyboardEvent) => boolean;
+  report: (error: unknown) => void;
 }
 
 function editorOptions({ disabled, hint, showCommands, activeCommand }: ComposerOptions) {
@@ -46,6 +48,26 @@ export function useComposerEditor(options: ComposerOptions) {
           keydown(event) {
             if (event.isComposing || event.keyCode === 229) return false;
             return callbacks.current.onKeyDown(event);
+          },
+          paste(event, editor) {
+            if (editor.state.readOnly || !event.clipboardData) return false;
+            const readPaths = readPathPaste(event.clipboardData);
+            if (!readPaths) return false; // Keep CodeMirror's ordinary text paste and folding.
+            const { doc, selection } = editor.state;
+            void readPaths().then(paths => {
+              if (!paths.length || view.current !== editor || editor.state.readOnly) return;
+              if (editor.state.doc !== doc || !editor.state.selection.eq(selection)) {
+                callbacks.current.report("输入或光标位置已改变，请重新粘贴文件");
+                return;
+              }
+              const { from, to } = selection.main;
+              const insert = formatPastedPaths(paths, doc.sliceString(Math.max(0, from - 1), from), doc.sliceString(to, to + 1));
+              editor.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length },
+                userEvent: "input.paste.path", scrollIntoView: true });
+            }).catch(error => {
+              if (view.current === editor) callbacks.current.report(error);
+            });
+            return true;
           },
         }),
         keymap.of([...defaultKeymap, ...historyKeymap]),

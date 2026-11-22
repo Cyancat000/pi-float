@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod clipboard;
 mod terminals;
 
 use std::sync::Mutex;
@@ -140,7 +141,9 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             open_settings,
             launch_args,
-            terminals::terminal_sessions
+            terminals::terminal_sessions,
+            clipboard::clipboard_file_paths,
+            clipboard::save_clipboard_blob
         ])
         .setup(|app| {
             install_tray(app)?;

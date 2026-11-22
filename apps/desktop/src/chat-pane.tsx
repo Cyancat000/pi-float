@@ -179,7 +179,7 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
     finally { setChanging(false); }
   }
 
-  const menuOpen = connected && !dismissed && !folded && /^\/[^\s]*$/.test(draft);
+  const menuOpen = connected && !dismissed && !folded && !startsInPaste && /^\/[^\s]*$/.test(draft);
   const matches = menuOpen ? commands.filter(({ name }) => name.toLowerCase().startsWith(draft.slice(1).toLowerCase()))
     .sort((a, b) => Number(b.name === draft.slice(1)) - Number(a.name === draft.slice(1)) || a.name.localeCompare(b.name)) : [];
   const index = Math.min(choice, matches.length - 1);
@@ -193,6 +193,7 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
     hint: busy ? "插话给终端…" : "输入消息…",
     showCommands: menuOpen,
     activeCommand: index,
+    report,
     onEdit(next) { setDraft(next); setChoice(0); setDismissed(false); },
     onKeyDown(event): boolean {
       if (menuOpen && event.key === "Escape") { setDismissed(true); return true; }

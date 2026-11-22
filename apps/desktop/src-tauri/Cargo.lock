@@ -2671,6 +2671,8 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-single-instance",
  "tauri-plugin-store",
+ "tempfile",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
