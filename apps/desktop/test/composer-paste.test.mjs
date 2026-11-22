@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { history, redo, undo } from "@codemirror/commands";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { foldPastes, readComposerDraft } from "../src/composer-paste.ts";
+import { expandPastes, foldPastes, readComposerDraft } from "../src/composer-paste.ts";
 import { formatPastedPaths, localFileUris } from "../src/clipboard.ts";
 
 const code = Array.from({ length: 12 }, (_, i) => `  const line${i} = ${i};\n`).join("");
@@ -63,11 +63,33 @@ test("undo then redo restores the original paste and its label", () => {
   assert.deepEqual(folds(state), [[0, code.length, "[粘贴内容 #1 12行]"]]);
 });
 
+test("expanding large pastes restores editable text without losing its paste origin", () => {
+  const text = `/path\n${code}`;
+  let state = paste(editor(), text);
+  assert.deepEqual(readComposerDraft(state), { text, hasLargePaste: true, hasCollapsedPaste: true, startsInPaste: true });
+  assert.equal(state.facet(EditorView.atomicRanges)[0]({ state }).size, 1);
+
+  const doc = state.doc;
+  state = state.update({ effects: expandPastes.of(null) }).state;
+  assert.equal(state.doc, doc);
+  assert.deepEqual(folds(state), []);
+  assert.equal(state.facet(EditorView.atomicRanges)[0]({ state }).size, 0);
+  state = state.update({ changes: { from: 2, insert: "EDIT" }, userEvent: "input.type" }).state;
+  assert.deepEqual(readComposerDraft(state), {
+    text: `/pEDITath\n${code}`, hasLargePaste: true, hasCollapsedPaste: false, startsInPaste: true,
+  });
+  state = runHistory(undo, state);
+  assert.equal(readComposerDraft(state).text, text);
+  assert.deepEqual(folds(state), []);
+  state = paste(state, code);
+  assert.deepEqual(folds(state), [[doc.length, doc.length + code.length, "[粘贴内容 #2 12行]"]]);
+});
+
 test("path pastes stay visible, survive edits and redo, and do not use fold numbers", () => {
   const paths = Array.from({ length: 12 }, (_, i) => `/tmp/file-${i}`).join("\n");
   let state = editor();
   state = state.update({ changes: { from: 0, insert: paths }, userEvent: "input.paste.path" }).state;
-  assert.deepEqual(readComposerDraft(state), { text: paths, folded: false, startsInPaste: true });
+  assert.deepEqual(readComposerDraft(state), { text: paths, hasLargePaste: false, hasCollapsedPaste: false, startsInPaste: true });
   state = runHistory(undo, state);
   assert.equal(readComposerDraft(state).startsInPaste, false);
   state = runHistory(redo, state);

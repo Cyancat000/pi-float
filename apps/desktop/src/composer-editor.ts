@@ -3,7 +3,7 @@ import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { useLayoutEffect, useRef } from "react";
 import { formatPastedPaths, readPathPaste } from "./clipboard";
-import { foldPastes, readComposerDraft } from "./composer-paste";
+import { expandPastes, foldPastes, readComposerDraft } from "./composer-paste";
 
 interface ComposerOptions {
   disabled: boolean;
@@ -72,7 +72,7 @@ export function useComposerEditor(options: ComposerOptions) {
         }),
         keymap.of([...defaultKeymap, ...historyKeymap]),
         EditorView.updateListener.of(update => {
-          if (!update.docChanged) return;
+          if (!update.docChanged && !update.transactions.some(tr => tr.effects.some(effect => effect.is(expandPastes)))) return;
           callbacks.current.onEdit(readComposerDraft(update.state));
         }),
       ],
@@ -99,5 +99,12 @@ export function useComposerEditor(options: ComposerOptions) {
     callbacks.current.onEdit(readComposerDraft(state));
   }
 
-  return { host, view, clear };
+  function expand() {
+    const editor = view.current;
+    if (!editor) return;
+    editor.dispatch({ effects: expandPastes.of(null), scrollIntoView: true });
+    editor.focus();
+  }
+
+  return { host, view, clear, expand };
 }

@@ -9,9 +9,15 @@ function describeEntry(entry: SessionEntry): Pick<SessionTreeEntry, "kind" | "pr
   if (entry.type !== "message") return;
   const { message } = entry;
   if (message.role !== "user" && message.role !== "assistant") return;
-  const preview = previewContent(message.content);
-  return { kind: message.role, preview: preview || (message.role === "assistant" && message.stopReason === "aborted" ? "回复已中止"
-    : message.role === "assistant" && message.stopReason === "error" ? "回复失败" : "无文本消息") };
+  const preview = previewContent(message.content).trim();
+  if (preview) return { kind: message.role, preview };
+  if (message.role === "assistant") {
+    if (message.stopReason === "aborted") return { kind: "assistant", preview: "回复已中止" };
+    if (message.stopReason === "error") return { kind: "assistant", preview: "回复失败" };
+    const names = message.content.flatMap(block => block.type === "toolCall" ? [block.name.toLowerCase()] : []);
+    if (names.length) return { kind: "assistant", preview: `工具调用 ${names.join("、")}` };
+  }
+  return { kind: message.role, preview: "无文本消息" };
 }
 
 function previewContent(content: string | readonly { type: string; text?: string }[]) {

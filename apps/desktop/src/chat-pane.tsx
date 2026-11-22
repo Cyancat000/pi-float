@@ -1,5 +1,5 @@
 import type { ChatMessage, ContextUsage, MessageBlock, ModuleVisibility, SessionTree, StreamingMessage, WorkspaceSession } from "@pi-float/protocol";
-import { ArrowUp, Check, ChevronDown, ChevronUp, Copy, GitBranch, History, MessageSquare, Plus, RotateCw, Square } from "lucide-react";
+import { ArrowUp, Check, ChevronDown, ChevronUp, Copy, GitBranch, History, MessageSquare, Plus, RotateCw, Square, UnfoldVertical } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -118,7 +118,9 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
   const { snapshot } = terminal;
   const connected = terminal.connection === "connected" && !!snapshot;
   const modules = usePreferences((prefs) => prefs.modules);
-  const [{ text: draft, folded, startsInPaste }, setDraft] = useState({ text: "", folded: false, startsInPaste: false });
+  const [{ text: draft, hasLargePaste, hasCollapsedPaste, startsInPaste }, setDraft] = useState({
+    text: "", hasLargePaste: false, hasCollapsedPaste: false, startsInPaste: false,
+  });
   const feed = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [sending, setSending] = useState(false);
@@ -184,7 +186,7 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
     finally { setChanging(false); }
   }
 
-  const menuOpen = connected && !dismissed && !folded && !startsInPaste && /^\/[^\s]*$/.test(draft);
+  const menuOpen = connected && !dismissed && !hasLargePaste && !startsInPaste && /^\/[^\s]*$/.test(draft);
   const matches = menuOpen ? commands.filter(({ name }) => name.toLowerCase().startsWith(draft.slice(1).toLowerCase()))
     .sort((a, b) => Number(b.name === draft.slice(1)) - Number(a.name === draft.slice(1)) || a.name.localeCompare(b.name)) : [];
   const index = Math.min(choice, matches.length - 1);
@@ -238,8 +240,8 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
     event?.preventDefault();
     if (!canSend) return;
     const isCommand = command !== undefined || isDraftCommand;
-    // Keep the original indentation and trailing newline of folded code.
-    const text = command ?? (folded && !isCommand ? draft : draft.trim());
+    // Keep the original indentation and trailing newline of pasted code, even after expanding it.
+    const text = command ?? (hasLargePaste && !isCommand ? draft : draft.trim());
     if (isCommand && snapshot?.sessionActions && /^\/(new|resume)(?:\s|$)/.test(text)) {
       if (text !== "/new" && text !== "/resume") { report("请直接使用 /new 或 /resume，不需要参数"); return; }
       composer.clear(); void sessionAction(text === "/new" ? "new_session" : "list_sessions"); return;
@@ -326,6 +328,8 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
             }} />
           {modules.showTokenUsage && snapshot?.contextUsage && <ContextMeter usage={snapshot.contextUsage} />}
           <div className="flex shrink-0 gap-1">
+            {hasCollapsedPaste && <button className="icon-button" type="button" aria-label="展开粘贴内容" title="展开粘贴内容"
+              onClick={composer.expand}><UnfoldVertical size={15} /></button>}
             {busy && <button className="icon-button" type="button" aria-label="中止" title="中止" disabled={!connected} onClick={() => void terminal.request({ type: "abort" }).catch(report)}><Square size={15} /></button>}
             <button className="icon-button primary-action" type="submit" aria-label={busy ? "插话" : "发送"} title={busy ? "插话" : "发送"} disabled={!canSend}><ArrowUp size={16} /></button>
           </div>

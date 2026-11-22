@@ -12,9 +12,18 @@ const palettes = new Map([...css.matchAll(/([^{}]+)\{([^{}]+)\}/g)].flatMap(([, 
 
 test("Light is the default for missing and unknown preferences", () => {
   assert.equal(DEFAULT_THEME, "light");
-  assert.equal(THEMES.find(({ id }) => id === DEFAULT_THEME)?.name, "Light");
   for (const value of [undefined, null, 0, {}, "", "retired-theme", "toString"]) assert.equal(normalizeTheme(value), DEFAULT_THEME);
   for (const { id } of THEMES) assert.equal(normalizeTheme(id), id);
+});
+
+test("theme names use the original name followed by a two-character Chinese name", () => {
+  for (const { name } of THEMES) assert.match(name, /^[A-Za-z ]+ · \p{Script=Han}{2}$/u);
+});
+
+test("character themes declare their intended color schemes", () => {
+  for (const [id, scheme] of [["luna", "light"], ["merly", "light"], ["ange", "dark"], ["eustia", "light"]]) {
+    assert.ok(css.includes(`[data-palette="${id}"] {\n  color-scheme: ${scheme};`), id);
+  }
 });
 
 test("every selectable theme has a complete palette for both the window and its preview", () => {
@@ -37,14 +46,15 @@ function luminance(hex) {
 
 test("core text, code and status colors meet 4.5:1 contrast at full opacity", () => {
   for (const [id, palette] of palettes) {
+    const color = (token) => palette[token] === "var(--accent)" ? palette.accent : palette[token];
     const check = (foreground, background) => {
-      const a = luminance(palette[foreground]);
-      const b = luminance(palette[background]);
+      const a = luminance(color(foreground));
+      const b = luminance(color(background));
       const ratio = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
       assert.ok(ratio >= 4.5, `${id}: ${foreground} on ${background} is ${ratio.toFixed(2)}:1`);
     };
     for (const background of ["canvas", "panel", "chrome", "surface", "message-fill", "accent-fill", "hover"]) {
-      for (const foreground of ["text", "secondary", "muted", "accent"]) check(foreground, background);
+      for (const foreground of ["text", "secondary", "muted", "accent-ink"]) check(foreground, background);
     }
     for (const [foreground, background] of [
       ["text", "selection"], ["on-accent", "accent"], ["on-accent", "accent-hover"],

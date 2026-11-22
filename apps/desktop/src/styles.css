@@ -25,7 +25,7 @@ button:disabled { cursor: default; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .muted { color: var(--muted); }
 .secondary { color: var(--secondary); }
-.accent-text { color: var(--accent); }
+.accent-text { color: var(--accent-ink); }
 .warning-text { color: var(--warning); }
 .error-text { color: var(--danger); }
 .success-text { color: var(--success); }
@@ -63,7 +63,7 @@ button:disabled { cursor: default; }
 }
 .control > svg { flex: none; }
 :is(.icon-button, .control):not(:disabled):hover { background: var(--hover); }
-:is(.icon-button, .control):is([aria-expanded="true"], [aria-pressed="true"]) { background: var(--accent-fill); border-color: var(--accent-line); color: var(--accent); }
+:is(.icon-button, .control):is([aria-expanded="true"], [aria-pressed="true"]) { background: var(--accent-fill); border-color: var(--accent-line); color: var(--accent-ink); }
 :is(.icon-button, .control, .panel-row):disabled { opacity: .56; }
 
 .popup { background: var(--surface); border: 1px solid var(--control-line); border-radius: 6px; box-shadow: var(--shadow); }
@@ -97,7 +97,7 @@ button:disabled { cursor: default; }
 .picker-option + .picker-option { margin-top: 3px; }
 .picker-option[data-active="true"] { background: var(--accent-fill); }
 .picker-option:not([data-active="true"]):hover { background: var(--hover); }
-.picker-check { display: grid; flex: 0 0 15px; place-items: center; color: var(--accent); }
+.picker-check { display: grid; flex: 0 0 15px; place-items: center; color: var(--accent-ink); }
 .picker-inline-label { display: flex; min-width: 0; align-items: baseline; gap: 5px; }
 .picker-inline-detail { min-width: 0; max-width: 45%; flex: 0 0 auto; color: var(--muted); font-size: .92em; }
 .picker-inline-name { min-width: 0; font-weight: 600; }
@@ -133,11 +133,9 @@ button:disabled { cursor: default; }
 
 .chat-feed { flex: 1 0 64px; min-height: 0; overflow: auto; padding: 10px 11px; display: grid; grid-template: 1fr auto / minmax(0, 1fr); }
 .working-blocks {
-  --sweep-tip: color-mix(in srgb, var(--accent) 48%, white);
   height: 10px;
   margin-top: 2px;
   overflow: hidden;
-  filter: drop-shadow(0 0 2px var(--accent));
 }
 .working-blocks::before {
   content: "";
@@ -145,14 +143,14 @@ button:disabled { cursor: default; }
   width: 80%;
   margin: 3px auto;
   height: 4px;
-  background: linear-gradient(90deg, var(--sweep-tip), var(--accent) 50%, var(--sweep-tip));
+  background: linear-gradient(90deg, transparent, currentColor 50%, transparent);
   mask-image: repeating-linear-gradient(90deg, #000 0 4px, transparent 4px 8px);
-  animation: working-sweep 1.8s ease-in-out infinite alternate;
+  opacity: .75;
+  animation: working-pulse 1.8s ease-in-out infinite alternate;
 }
-/* The band travels 30% of the track from center, leaving at least 60% visible. */
-@keyframes working-sweep {
-  from { transform: translateX(-37.5%); }
-  to { transform: translateX(37.5%); }
+@keyframes working-pulse {
+  from { opacity: .35; }
+  to { opacity: 1; }
 }
 .empty-chat { display: flex; min-height: 100%; flex-direction: column; justify-content: center; align-items: center; gap: 5px; padding: 12px; text-align: center; color: var(--muted); font-size: 12px; }
 .empty-chat > svg { margin-bottom: 3px; }
@@ -175,31 +173,30 @@ button:disabled { cursor: default; }
 .code-fence { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: 5px; }
 .code-fence-copy { position: absolute; top: 2px; right: 2px; background: var(--panel); }
 .code-fence > pre { max-width: 100%; overflow: auto; padding: 7px 32px 7px 7px; font-size: 12px; }
-.code-fence-toggle { display: flex; align-items: center; justify-content: center; gap: 4px; width: 100%; border-top: 1px solid var(--line); padding: 4px 7px; color: var(--accent); font-size: 11px; }
+.code-fence-toggle { display: flex; align-items: center; justify-content: center; gap: 4px; width: 100%; border-top: 1px solid var(--line); padding: 4px 7px; color: var(--accent-ink); font-size: 11px; }
 .code-fence-toggle:hover { background: var(--panel); }
 
 .composer-dock { position: relative; flex: none; padding: 8px; border-top: 1px solid var(--line); background: var(--panel); }
 .composer { min-width: 0; border: 1px solid var(--control-line); border-radius: 6px; background: var(--surface); }
 .composer:has(.cm-focused) { border-color: var(--focus); }
-.composer .cm-editor { min-height: 43px; max-height: min(116px, 28vh); }
 .composer .cm-editor.cm-focused { outline: none; }
 .composer .cm-content:focus-visible { outline: none; }
 .composer .cm-editor.cm-focused .cm-cursor { border-left-color: currentColor; }
 ::selection { background: var(--selection); color: var(--text); }
-/* Bound CodeMirror's own scroll container so it can reveal the caret. */
-.composer .cm-scroller { flex: 1 1 auto; min-height: 0; height: auto; overflow: hidden auto; overscroll-behavior: contain; font-family: inherit; }
-.composer .cm-content { padding: 7px 0 2px; }
+/* Size the scrolling element itself, and make the editable area fill any spare space. */
+.composer .cm-scroller { min-height: 43px; max-height: min(116px, 28vh); height: auto; overflow: auto; overscroll-behavior: contain; font-family: inherit; }
+.composer .cm-content { align-self: stretch; min-width: 0; padding: 7px 0 2px; }
 .composer .cm-line { padding: 0 8px; }
 .composer .cm-placeholder { color: var(--muted); }
 .composer .cm-content[aria-disabled="true"] { opacity: .65; }
-.composer-paste { color: var(--accent); background: var(--accent-fill); border-radius: 4px; padding: 0 3px; white-space: nowrap; }
+.composer-paste { color: var(--accent-ink); background: var(--accent-fill); border-radius: 4px; padding: 0 3px; white-space: nowrap; }
 .composer-toolbar { display: flex; align-items: center; gap: 5px; padding: 4px; }
 .model-picker { max-width: 56%; margin-right: auto; }
 .model-picker .picker-trigger { font-size: 11px; }
 .model-picker .picker-trigger:not(:hover):not([aria-expanded="true"]) { background: var(--panel); }
 .primary-action { background: var(--panel); border-color: var(--line); }
-.primary-action:not(:disabled) { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-.primary-action:not(:disabled):hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.primary-action:not(:disabled) { background: var(--accent); border-color: var(--accent-ink); color: var(--on-accent); }
+.primary-action:not(:disabled):hover { background: var(--accent-hover); }
 .command-popup { position: absolute; inset-inline: 8px; bottom: calc(100% - 3px); z-index: 30; padding: 3px; font-size: 12px; }
 .picker-above .picker-list, .command-popup { --popup-offset: 4px; --popup-origin: bottom left; }
 .command-popup [role="listbox"] { max-height: min(12rem, calc(100vh - 11rem)); }
@@ -214,7 +211,7 @@ button:disabled { cursor: default; }
 @media (max-width: 270px) { .theme-grid { grid-template-columns: minmax(0, 1fr); } }
 .theme-card { display: grid; gap: 2px; height: 100%; padding: 6px; border: 1px solid var(--control-line); border-radius: 6px; background: var(--surface); cursor: pointer; }
 .theme-choice:not(:has(input:disabled)):hover .theme-card { background: var(--hover); }
-.theme-choice input:checked + .theme-card { border-color: var(--accent); background: var(--accent-fill); }
+.theme-choice input:checked + .theme-card { border-color: var(--accent-ink); background: var(--accent-fill); }
 .theme-choice input:focus-visible + .theme-card { outline: 2px solid var(--focus); outline-offset: 1px; }
 .theme-choice input:disabled + .theme-card { opacity: .6; cursor: default; }
 @media (forced-colors: active) {
@@ -223,7 +220,7 @@ button:disabled { cursor: default; }
   .theme-preview { forced-color-adjust: none; }
 }
 .theme-name { display: flex; align-items: baseline; gap: 4px; justify-content: space-between; font-weight: 600; }
-.theme-choice input:checked + .theme-card .theme-name::after { content: "✓" / ""; color: var(--accent); }
+.theme-choice input:checked + .theme-card .theme-name::after { content: "✓" / ""; color: var(--accent-ink); }
 .theme-description { color: var(--muted); font-size: 11px; }
 /* Scope tokens to the miniature, leaving card labels in the active theme. */
 .theme-preview { display: grid; grid-template-rows: 9px 1fr 12px; height: 48px; overflow: hidden; margin-bottom: 3px; border: 1px solid var(--frame-line); border-radius: 4px; background: var(--canvas); }
@@ -239,7 +236,7 @@ button:disabled { cursor: default; }
 .settings-row { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); padding: 10px 0; }
 .settings-switch { appearance: none; display: grid; align-items: center; justify-items: start; width: 32px; height: 18px; border: 1px solid var(--muted); border-radius: 10px; padding: 2px; background: var(--panel); cursor: pointer; transition: background-color 160ms ease, border-color 160ms ease; }
 .settings-switch::before { content: ""; width: 12px; height: 12px; border-radius: 50%; background: var(--muted); transform: translateX(0); transition: transform 160ms ease, background-color 160ms ease; }
-.settings-switch:checked { border-color: var(--accent); background: var(--accent); }
+.settings-switch:checked { border-color: var(--accent-ink); background: var(--accent); }
 .settings-switch:checked::before { background: var(--on-accent); transform: translateX(14px); }
 .settings-switch:disabled { opacity: .6; cursor: default; }
 @media (prefers-reduced-motion: reduce) {

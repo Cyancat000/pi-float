@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { findRetry, projectTree } from "../src/tree.ts";
 
 const user = (id, parentId, content = "Ask me") => ({ type: "message", id, parentId, message: { role: "user", content } });
-const assistant = (id, parentId, stopReason) => ({ type: "message", id, parentId, message: { role: "assistant", content: [], stopReason } });
+const assistant = (id, parentId, stopReason, content = []) => ({ type: "message", id, parentId, message: { role: "assistant", content, stopReason } });
 const custom = (id, parentId, type = "custom") => ({ type, id, parentId });
 const node = (entry, ...children) => ({ entry, children });
 const session = (branch, roots = []) => ({ getLeafId: () => branch.at(-1)?.id ?? null, getTree: () => [...roots], getBranch: () => branch });
@@ -22,6 +22,23 @@ test("Tree hides internal entries but preserves branch ancestry and the exact ti
   ]);
   assert.equal(tree.entries[0].preview, "One two [图片]");
   assert.equal(tree.entries[1].preview, "回复已中止");
+});
+
+test("Tree previews tool-only assistant messages by tool name without exposing arguments", () => {
+  const read = { type: "toolCall", id: "r", name: "Read", arguments: { path: "private.txt" } };
+  const grep = { type: "toolCall", id: "g", name: "GrEp", arguments: {} };
+  const whitespace = { type: "text", text: " \n " };
+  const response = { type: "text", text: "Let me check." };
+  for (const [stopReason, content, expected] of [
+    ["toolUse", [read], "工具调用 read"],
+    ["toolUse", [whitespace, read, grep], "工具调用 read、grep"],
+    ["toolUse", [response, read], "Let me check."],
+    ["error", [read], "回复失败"],
+    ["stop", [], "无文本消息"],
+  ]) {
+    const entry = assistant("a", null, stopReason, content);
+    assert.equal(projectTree(session([entry], [node(entry)])).entries[0].preview, expected);
+  }
 });
 
 test("Tree marks a non-tip current position and preserves the landing rule for hidden custom messages", () => {
