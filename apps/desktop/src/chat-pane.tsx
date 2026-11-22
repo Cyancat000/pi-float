@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import type { TerminalBridge } from "./bridge-client";
 import { Code } from "./code-highlight";
 import { useComposerEditor } from "./composer-editor";
+import { formatTokens } from "./format-tokens";
 import { Picker } from "./picker";
 import { usePreferences } from "./preferences";
 import { SessionTreePanel } from "./session-tree";
@@ -100,14 +101,17 @@ function Message({ message, modules, results, retry }: { message: ChatMessage | 
         <span className="muted">从原提示重新生成，不撤销已执行的操作。</span>
       </div>}
       {usage && <p className="mt-1 text-[11px] muted">
-        {usage.totalTokens} tokens（输入 {usage.input} · 输出 {usage.output}{usage.cacheRead ? ` · 缓存读 ${usage.cacheRead}` : ""}{usage.cacheWrite ? ` · 缓存写 ${usage.cacheWrite}` : ""}{usage.reasoning !== undefined ? ` · 推理 ${usage.reasoning}` : ""}）
+        {formatTokens(usage.totalTokens)} tokens（输入 {formatTokens(usage.input)} · 输出 {formatTokens(usage.output)}
+        {usage.cacheRead ? ` · 缓存读 ${formatTokens(usage.cacheRead)}` : ""}
+        {usage.cacheWrite ? ` · 缓存写 ${formatTokens(usage.cacheWrite)}` : ""}
+        {usage.reasoning !== undefined ? ` · 推理 ${formatTokens(usage.reasoning)}` : ""}）
       </p>}
     </article>
   );
 }
 
 function ContextMeter({ usage }: { usage: ContextUsage }) {
-  return <span className="text-[11px] muted">上下文 {usage.tokens ?? "—"} / {usage.contextWindow}{usage.percent !== null && ` · ${Math.round(usage.percent)}%`}</span>;
+  return <span className="text-[11px] muted">上下文 {usage.tokens === null ? "—" : formatTokens(usage.tokens)} / {formatTokens(usage.contextWindow)}{usage.percent !== null && ` · ${Math.round(usage.percent)}%`}</span>;
 }
 
 export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge; ready: boolean; report: (error: unknown) => void }) {
@@ -118,7 +122,7 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
   const feed = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [sending, setSending] = useState(false);
-  const busy = snapshot?.idle === false;
+  const busy = connected && snapshot.idle === false;
   const [choice, setChoice] = useState(0);
   const [dismissed, setDismissed] = useState(false);
   const commandList = useRef<HTMLDivElement>(null);
@@ -206,7 +210,7 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
         if (event.key === "Tab") {
           const insert = `/${matches[index].name} `;
           const editor = composer.view.current;
-          if (editor) editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert }, selection: { anchor: insert.length } });
+          if (editor) editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert }, selection: { anchor: insert.length }, scrollIntoView: true });
           return true;
         }
         if (event.key === "Enter") { submit(undefined, `/${matches[index].name}`); return true; }
@@ -220,11 +224,15 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
   const results = messages.filter((message) => message.role === "tool");
   const matched = new Set(messages.flatMap((message) => message.blocks.flatMap((block) => block.kind === "toolCall" ? [block.toolCallId] : [])));
   const terminalModels = snapshot?.models ?? [];
-
+  const modelKey = snapshot?.model ?? "";
+  const providerEnd = modelKey.indexOf("/");
+  const modelFallback = providerEnd > 0
+    ? { label: modelKey.slice(providerEnd + 1), detail: modelKey.slice(0, providerEnd) }
+    : modelKey || "无终端模型";
 
   useLayoutEffect(() => {
     if (stick.current && feed.current) feed.current.scrollTop = feed.current.scrollHeight;
-  }, [snapshot?.messages, snapshot?.streaming, modules]);
+  }, [snapshot?.messages, snapshot?.streaming, modules, busy]);
 
   function submit(event?: FormEvent<HTMLFormElement>, command?: string) {
     event?.preventDefault();
@@ -250,45 +258,51 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
   }
 
   return <>
-    {snapshot?.sessionActions && <section className="session-panel" aria-label="会话操作">
-      <div className="session-toolbar">
-        <MessageSquare size={14} className="muted shrink-0" aria-hidden="true" />
-        <span className="min-w-0 flex-1 truncate font-medium" title={snapshot.name}>{snapshot.name || "当前会话"}</span>
-        <div className="session-actions">
-          <button type="button" className="control" disabled={!sessionEnabled} aria-label="新建会话" title={busy ? "请等待回复结束" : "在当前工作区新建会话"}
-            onClick={() => void sessionAction("new_session")}><Plus size={14} /><span>新建</span></button>
-          <button type="button" className="control" disabled={!sessionEnabled} aria-label="历史会话" title="历史会话" aria-expanded={history !== null}
-            onClick={() => history === null ? void sessionAction("list_sessions") : setHistory(null)}><History size={14} /><span>历史</span></button>
-          {treeSupported && <button type="button" className="control" disabled={!canAct} aria-label="会话树" title="会话树" aria-expanded={treeOpen}
-            onClick={() => treeOpen ? setTreeOpen(false) : void openTree()}><GitBranch size={14} /><span>会话树</span></button>}
+    <div className="chat-panels">
+      {snapshot?.sessionActions && <section className="session-panel" aria-label="会话操作">
+        <div className="session-toolbar">
+          <MessageSquare size={14} className="muted shrink-0" aria-hidden="true" />
+          <span className="min-w-0 flex-1 truncate font-medium" title={snapshot.name}>{snapshot.name || "当前会话"}</span>
+          <div className="session-actions">
+            <button type="button" className="control" disabled={!sessionEnabled} aria-label="新建会话" title={busy ? "请等待回复结束" : "在当前工作区新建会话"}
+              onClick={() => void sessionAction("new_session")}><Plus size={14} /><span>新建</span></button>
+            <button type="button" className="control" disabled={!sessionEnabled} aria-label="历史会话" title="历史会话" aria-expanded={history !== null}
+              onClick={() => history === null ? void sessionAction("list_sessions") : setHistory(null)}><History size={14} /><span>历史</span></button>
+            {treeSupported && <button type="button" className="control" disabled={!canAct} aria-label="会话树" title="会话树" aria-expanded={treeOpen}
+              onClick={() => treeOpen ? setTreeOpen(false) : void openTree()}><GitBranch size={14} /><span>会话树</span></button>}
+          </div>
         </div>
-      </div>
-      {changing && !treeOpen && <p role="status">正在处理会话操作…</p>}
-      {treeOpen && <SessionTreePanel tree={tree} stale={treeStale} pending={changing} canRefresh={canAct} canNavigate={canAct && !busy}
-        onRefresh={() => void openTree()} onNavigate={(id) => void navigateTree(id)} onClose={() => setTreeOpen(false)} />}
-      {history !== null && <div className="session-history" aria-label="当前工作区的历史会话">
-        {!history.length && <p role="status">当前工作区没有其他历史会话</p>}
-        {history.map(row => <button key={row.id} type="button" className="panel-row flex gap-2" disabled={!sessionEnabled} onClick={() => void sessionAction("resume_session", row.id)}>
-          <span className="flex-1 truncate" title={row.label}>{row.label}</span><time className="muted">{new Date(row.modified).toLocaleString()}</time>
-        </button>)}
-      </div>}
-    </section>}
-    {connected && snapshot.todos && <TodoPanel todos={snapshot.todos} />}
+        {changing && !treeOpen && <p role="status">正在处理会话操作…</p>}
+        {treeOpen && <SessionTreePanel tree={tree} stale={treeStale} pending={changing} canRefresh={canAct} canNavigate={canAct && !busy}
+          onRefresh={() => void openTree()} onNavigate={(id) => void navigateTree(id)} onClose={() => setTreeOpen(false)} />}
+        {history !== null && <div className="session-history popup-enter" aria-label="当前工作区的历史会话">
+          {!history.length && <p role="status">当前工作区没有其他历史会话</p>}
+          {history.map(row => <button key={row.id} type="button" className="panel-row flex gap-2" disabled={!sessionEnabled} onClick={() => void sessionAction("resume_session", row.id)}>
+            <span className="flex-1 truncate" title={row.label}>{row.label}</span><time className="muted">{new Date(row.modified).toLocaleString()}</time>
+          </button>)}
+        </div>}
+      </section>}
+      {connected && snapshot.todos && <TodoPanel todos={snapshot.todos} />}
+    </div>
     <div ref={feed} className="chat-feed" onScroll={(event) => {
       const el = event.currentTarget;
       stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
     }}>
-      {!connected && <div className="px-2 py-1 text-xs muted">
-        <p role="status">{terminal.connection === "failed" ? "无法读取 Pi 终端会话。请确认终端仍在运行，或在目标终端执行 /ui 重新附着。"
-          : terminal.connection === "disconnected" ? "连接已断开，即将重试…" : "正在连接 Pi 终端…"}</p>
-        {terminal.connection === "failed" && <button type="button" className="control mt-1" onClick={terminal.retry}>重新连接</button>}
-      </div>}
-      {connected && !messages.length && !busy && <div className="empty-chat"><MessageSquare size={22} aria-hidden="true" /><strong>开始对话</strong><p>发送消息，或输入 <code>/</code> 查看命令。</p></div>}
-      {messages.map((message) => message.role === "tool" && (!modules.showToolCalls || matched.has(message.toolCallId)) ? null :
-        <Message key={message.id} message={message} modules={modules} results={results}
-          retry={retryTarget?.assistantId === message.id ? { enabled: canAct, run: () => void retryTurn() } : undefined} />)}
-      {snapshot?.streaming && <Message message={snapshot.streaming} modules={modules} results={results} />}
-      {busy && !snapshot?.streaming && <p className="px-2 text-xs muted" role="status">正在等待回复…</p>}
+      <div>
+        {!connected && <div className="px-2 py-1 text-xs muted">
+          <p role="status">{terminal.connection === "failed" ? "无法读取 Pi 终端会话。请确认终端仍在运行，或在目标终端执行 /ui 重新附着。"
+            : terminal.connection === "disconnected" ? "连接已断开，即将重试…" : "正在连接 Pi 终端…"}</p>
+          {terminal.connection === "failed" && <button type="button" className="control mt-1" onClick={terminal.retry}>重新连接</button>}
+        </div>}
+        {connected && !messages.length && !busy && <div className="empty-chat"><MessageSquare size={22} aria-hidden="true" /><strong>开始对话</strong><p>发送消息，或输入 <code>/</code> 查看命令。</p></div>}
+        {messages.map((message) => message.role === "tool" && (!modules.showToolCalls || matched.has(message.toolCallId)) ? null :
+          <Message key={message.id} message={message} modules={modules} results={results}
+            retry={retryTarget?.assistantId === message.id ? { enabled: canAct, run: () => void retryTurn() } : undefined} />)}
+        {snapshot?.streaming && <Message message={snapshot.streaming} modules={modules} results={results} />}
+      </div>
+      <div role="status">
+        {busy && <><span className="sr-only">Pi 正在工作…</span><div className="working-blocks" aria-hidden="true" /></>}
+      </div>
     </div>
     <form className="composer-dock" onSubmit={submit}>
       {menuOpen && <div className="popup command-popup">
@@ -303,7 +317,7 @@ export function ChatPane({ terminal, ready, report }: { terminal: TerminalBridge
       <div className="composer">
         <div ref={composer.host} />
         <div className="composer-toolbar">
-          <Picker className="model-picker" label="模型" value={snapshot?.model ?? ""} fallback={snapshot?.model ?? "无终端模型"} above
+          <Picker className="model-picker" label="模型" value={modelKey} fallback={modelFallback} above inlineDetail
             disabled={!connected || busy || changing || sending}
             options={terminalModels.map(({ provider, id, name }) => ({ value: `${provider}/${id}`, label: name || id, detail: provider }))}
             onChange={(value) => {

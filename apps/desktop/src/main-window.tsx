@@ -75,7 +75,7 @@ export function MainWindow({ ready, report }: { ready: boolean; report: (error: 
             <Contrast size={15} />
           </button>
           {showOpacity && (
-            <div className="popup absolute right-0 top-full z-30 mt-1 w-44 p-3">
+            <div className="popup opacity-popup absolute right-0 top-full z-30 mt-1 w-44 p-3">
               <label className="text-xs" htmlFor="opacity">不透明度 <output>{Math.round(opacity * 100)}%</output></label>
               <input id="opacity" className="mt-2 block w-full accent-(--accent)" type="range" min="0.35" max="1" step="0.01" value={opacity}
                 onChange={(event) => usePreferences.setState({ opacity: event.currentTarget.valueAsNumber })}

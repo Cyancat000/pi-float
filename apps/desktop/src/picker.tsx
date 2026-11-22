@@ -7,7 +7,7 @@ export interface PickerOption {
   detail?: string;
 }
 
-export function Picker({ label, value, options, onChange, disabled, above, icon, fallback, className = "" }: {
+export function Picker({ label, value, options, onChange, disabled, above, icon, fallback, inlineDetail, className = "" }: {
   label: string;
   value: string;
   options: PickerOption[];
@@ -15,7 +15,8 @@ export function Picker({ label, value, options, onChange, disabled, above, icon,
   disabled?: boolean;
   above?: boolean;
   icon?: ReactNode;
-  fallback: string;
+  fallback: string | Pick<PickerOption, "label" | "detail">;
+  inlineDetail?: boolean;
   className?: string;
 }) {
   const id = useId();
@@ -68,21 +69,30 @@ export function Picker({ label, value, options, onChange, disabled, above, icon,
     }
   }
 
-  const display = options[selected]?.label ?? fallback;
+  const display = options[selected] ?? (typeof fallback === "string" ? { label: fallback } : fallback);
+  const displayText = inlineDetail && display.detail ? `${display.detail} / ${display.label}` : display.label;
   return <div ref={root} className={`picker ${above ? "picker-above" : ""} ${className}`}>
-    <button type="button" role="combobox" className="control picker-trigger" aria-label={`${label}：${display}`} title={display}
+    <button type="button" role="combobox" className="control picker-trigger" aria-label={`${label}：${displayText}`} title={displayText}
       aria-haspopup="listbox" aria-expanded={open} aria-controls={open ? id : undefined} aria-activedescendant={open ? `${id}-${active}` : undefined}
       disabled={unavailable} onBlur={() => setActiveValue(null)} onKeyDown={onKeyDown}
       onClick={() => setActiveValue(open ? null : options[active]?.value ?? null)}>
-      {icon}<span className="truncate">{display}</span><ChevronDown size={13} className="picker-chevron" aria-hidden="true" />
+      {icon}{inlineDetail ? <InlineLabel {...display} /> : <span className="truncate">{display.label}</span>}
+      <ChevronDown size={13} className="picker-chevron" aria-hidden="true" />
     </button>
     {open && <div ref={list} id={id} role="listbox" aria-label={label} className="popup picker-list">
       {options.map((option, index) => <div role="option" key={option.value} id={`${id}-${index}`} aria-selected={index === selected}
-        className="picker-option" data-active={index === active} title={option.detail ?? option.label}
+        className="picker-option" data-active={index === active} title={inlineDetail && option.detail ? `${option.detail} / ${option.label}` : option.detail ?? option.label}
         onMouseDown={(event) => event.preventDefault()} onClick={() => choose(index)}>
         <span className="picker-check">{index === selected && <Check size={14} aria-hidden="true" />}</span>
-        <span className="min-w-0"><span className="block truncate">{option.label}</span>{option.detail && <span className="muted block truncate text-[11px]">{option.detail}</span>}</span>
+        {inlineDetail ? <InlineLabel {...option} /> : <span className="min-w-0"><span className="block truncate">{option.label}</span>{option.detail && <span className="muted block truncate text-[11px]">{option.detail}</span>}</span>}
       </div>)}
     </div>}
   </div>;
+}
+
+function InlineLabel({ label, detail }: Pick<PickerOption, "label" | "detail">) {
+  return <span className="picker-inline-label">
+    {detail && <><span className="picker-inline-detail truncate">{detail}</span><span className="muted" aria-hidden="true">/</span></>}
+    <span className="picker-inline-name truncate">{label}</span>
+  </span>;
 }
