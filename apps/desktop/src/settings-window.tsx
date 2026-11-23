@@ -1,4 +1,6 @@
 import type { ModuleVisibility } from "@pi-float/protocol";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { X } from "lucide-react";
 import { useState } from "react";
 import { savePreference, usePreferences } from "./preferences";
 import { THEMES } from "./themes";
@@ -8,7 +10,20 @@ const modules: [keyof ModuleVisibility, string][] = [
   ["showTokenUsage", "Token 用量"], ["showTimestamp", "消息时间"],
 ];
 
-export function SettingsWindow({ ready, report }: { ready: boolean; report: (error: unknown) => void }) {
+interface SettingsProps { ready: boolean; report: (error: unknown) => void }
+
+export function SettingsWindow({ ready, report }: SettingsProps) {
+  return <div className="floating-shell flex h-full flex-col overflow-hidden">
+    <header className="titlebar" data-tauri-drag-region>
+      <span className="flex h-full flex-1 items-center pl-1 font-medium" data-tauri-drag-region>pi-float 设置</span>
+      <button className="icon-button" type="button" title="关闭设置" aria-label="关闭设置"
+        onClick={() => void getCurrentWindow().hide().catch(report)}><X size={16} /></button>
+    </header>
+    <SettingsContent ready={ready} report={report} />
+  </div>;
+}
+
+function SettingsContent({ ready, report }: SettingsProps) {
   const visibility = usePreferences((prefs) => prefs.modules);
   const theme = usePreferences((prefs) => prefs.theme);
   const [pending, setPending] = useState(false);

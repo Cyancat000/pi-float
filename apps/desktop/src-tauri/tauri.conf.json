@@ -29,6 +29,9 @@
         "title": "pi-float 设置",
         "width": 640,
         "height": 480,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
         "center": true,
         "visible": false,
         "focus": false
