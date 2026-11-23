@@ -46,14 +46,26 @@ button:disabled { cursor: default; }
 .compact-titlebar .icon-button { width: 25px; height: 23px; }
 .compact-title { color: var(--secondary); font-size: 11px; font-weight: 600; }
 .compact-pane { display: flex; flex: 1; min-height: 0; flex-direction: column; font-size: 12px; }
+.compact-message-window { position: relative; flex: 1; min-height: 0; overflow: hidden; }
 .compact-message {
+  position: absolute;
+  inset: 5px 8px auto;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow: hidden;
   overflow-wrap: anywhere;
   line-height: 17px;
-  margin: 5px 8px;
+}
+.compact-message-in { animation: compact-message-in 200ms ease-out both; }
+.compact-message-out { pointer-events: none; animation: compact-message-out 200ms ease-in both; }
+@keyframes compact-message-in {
+  from { transform: translateY(12px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes compact-message-out {
+  from { transform: translateY(0); opacity: 1; }
+  to { transform: translateY(-12px); opacity: 0; }
 }
 .compact-todo {
   display: flex;
@@ -64,6 +76,27 @@ button:disabled { cursor: default; }
   border-top: 1px solid var(--line);
   background: var(--panel);
   color: var(--secondary);
+}
+.compact-todo-title {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: top;
+}
+@supports (background-clip: text) and (color: light-dark(black, white)) {
+  .compact-todo-title[data-working="true"] {
+    --working-base: light-dark(color-mix(in srgb, var(--secondary) 81%, var(--panel)), color-mix(in srgb, var(--text) 88%, white));
+    --working-accent: light-dark(color-mix(in srgb, var(--accent-ink) 57%, black), color-mix(in srgb, var(--accent-ink) 89%, black));
+    background: linear-gradient(45deg, var(--working-base) 38%, var(--working-accent) 47% 53%, var(--working-base) 62%) 100% 50% / 240% 100% no-repeat;
+    background-clip: text;
+    color: transparent;
+    animation: compact-todo-sweep 1.8s linear infinite;
+  }
+}
+@keyframes compact-todo-sweep {
+  to { background-position-x: 0%; }
 }
 .compact-progress {
   flex: none;
@@ -277,6 +310,12 @@ button:disabled { cursor: default; }
   .settings-switch, .settings-switch::before { transition: none; }
   .popup, .popup-enter, .working-blocks::before { animation: none; }
   .working-blocks::before { background: color-mix(in srgb, currentColor 55%, transparent); }
+  .compact-message-in, .compact-message-out { animation: none; }
+  .compact-message-out { display: none; }
+  .compact-todo-title[data-working="true"] { animation: none; background: none; color: var(--accent-ink); }
+}
+@media (forced-colors: active) {
+  .compact-todo-title[data-working="true"] { animation: none; background: none; color: CanvasText; }
 }
 .toast { border: 1px solid var(--control-line); border-radius: 6px; background: var(--surface); box-shadow: var(--shadow); }
 .toast-info { border-left: 3px solid var(--accent); }

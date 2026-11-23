@@ -85,6 +85,9 @@ export class BridgeClient {
           || typeof event.message !== "string" || !["info", "warning", "error"].includes(event.level)) return;
         this.lastNotificationSequence = event.sequence;
         useRemote.setState({ notifications: [...notifications.slice(-4), event] });
+      } else if (event.type === "tool_call") {
+        const { snapshot } = useRemote.getState();
+        if (snapshot?.sessionId === event.sessionId) useRemote.setState({ snapshot: { ...snapshot, streaming: null, latestToolCall: event.call } });
       } else if (event.type === "stream") {
         const { snapshot } = useRemote.getState();
         if (snapshot?.sessionId === event.sessionId) useRemote.setState({ snapshot: { ...snapshot, streaming: event.message } });

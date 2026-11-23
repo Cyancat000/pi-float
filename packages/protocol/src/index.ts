@@ -74,6 +74,7 @@ export interface SessionSnapshot extends ActiveSessionRegistration {
   schemaVersion: 1;
   messages: ChatMessage[];
   streaming: StreamingMessage | null;
+  latestToolCall?: ToolActivity;
   contextUsage: ContextUsage | null;
   sessionActions?: boolean;
   /** Undefined means the attached bridge does not support Tree. */
@@ -85,12 +86,14 @@ export interface SessionSnapshot extends ActiveSessionRegistration {
 }
 
 export type StreamingMessage = MessageBase & { role: "assistant" };
+export interface ToolActivity { toolCallId: string; toolName: string }
 
 export type SyncEvent =
   | { type: "session_registered"; session: ActiveSessionRegistration }
   | { type: "session_unregistered"; sessionId: string }
   | { type: "snapshot"; session: SessionSnapshot }
-  | { type: "stream"; sessionId: string; message: StreamingMessage | null };
+  | { type: "stream"; sessionId: string; message: StreamingMessage | null }
+  | { type: "tool_call"; sessionId: string; call: ToolActivity };
 
 export type BridgeRequest = { requestId: string; sessionId: string } & (
   | { type: "send"; text: string }

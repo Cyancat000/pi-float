@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { SessionManager, type ExtensionAPI, type ExtensionContext, type ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import type { BridgeEvent, RequestResult, StreamingMessage, TodoSource } from "../../protocol/src/index.js";
+import type { BridgeEvent, RequestResult, StreamingMessage, TodoSource, ToolActivity } from "../../protocol/src/index.js";
 import type { WebSocket } from "ws";
 import { launchDesktop } from "./launcher.js";
 import { observeNotifications } from "./notifications.js";
@@ -14,6 +14,7 @@ const FLOAT_COMMAND = "float-ui";
 export default function piFloat(pi: ExtensionAPI): void {
   let ctx: ExtensionContext | undefined;
   let streaming: StreamingMessage | null = null;
+  let latestToolCall: ToolActivity | undefined;
   let todoSource: TodoSource = "pi-float";
   let nativeTodoRegistered = false;
   let lastStreamAt = 0;
@@ -51,7 +52,7 @@ export default function piFloat(pi: ExtensionAPI): void {
   function sessionSnapshot(active: ExtensionContext) {
     const retry = active.isIdle() && active.model ? findRetry(active.sessionManager) : undefined;
     return {
-      ...snapshot(active, streaming, todoSource), sessionActions: true, treeLeafId: active.sessionManager.getLeafId(),
+      ...snapshot(active, streaming, todoSource), latestToolCall, sessionActions: true, treeLeafId: active.sessionManager.getLeafId(),
       retryTarget: retry ? { promptId: retry.promptId, assistantId: retry.assistantId, leafId: retry.leafId } : undefined,
       commands: pi.getCommands().map(({ name, description }) => ({ name, description })),
     };
@@ -75,10 +76,10 @@ export default function piFloat(pi: ExtensionAPI): void {
     publishSnapshot();
   }
 
-  function clearStream(active: ExtensionContext) {
+  function clearStream() {
     streaming = null;
+    latestToolCall = undefined;
     lastStreamAt = 0;
-    publish({ type: "stream", sessionId: active.sessionManager.getSessionId(), message: null });
   }
 
   async function dispatch(socket: WebSocket, text: string) {
@@ -187,23 +188,29 @@ export default function piFloat(pi: ExtensionAPI): void {
     unobserveNotifications?.();
     unobserveNotifications = undefined;
     ctx = undefined;
-    streaming = null;
-    lastStreamAt = 0;
+    clearStream();
     await transport.detach(["new", "resume", "fork"].includes(event.reason));
   });
   pi.on("agent_start", (_event, active) => updateContext(active));
   pi.on("agent_end", (_event, active) => updateContext(active));
-  pi.on("agent_settled", (_event, active) => { clearStream(active); updateContext(active); });
+  pi.on("agent_settled", (_event, active) => { clearStream(); updateContext(active); });
   pi.on("model_select", (_event, active) => updateContext(active));
   pi.on("thinking_level_select", (_event, active) => updateContext(active));
   pi.on("session_info_changed", (_event, active) => updateContext(active));
   pi.on("session_tree", (_event, active) => updateContext(active));
+  pi.on("tool_execution_start", ({ toolCallId, toolName }, active) => {
+    const sessionId = active.sessionManager.getSessionId();
+    if (ctx?.sessionManager.getSessionId() !== sessionId) return;
+    latestToolCall = { toolCallId, toolName };
+    publish({ type: "tool_call", sessionId, call: latestToolCall });
+  });
   pi.on("tool_execution_end", (event, active) => {
     if (todoSource === "rpiv-todo" && (event.toolName === "todo" || event.toolName === "codemode")
       && ctx?.sessionManager.getSessionId() === active.sessionManager.getSessionId()) publishSnapshot();
   });
   pi.on("message_end", (event, active) => {
-    if (event.message.role === "assistant") clearStream(active);
+    // Move the assistant reply into history in the same snapshot that clears the stream.
+    if (event.message.role === "assistant") clearStream();
     ctx = active;
     const sessionId = active.sessionManager.getSessionId();
     // Pi emits message_end before appending the entry, so read the branch afterward.

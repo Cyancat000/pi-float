@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { DEFAULT_THEME, normalizeTheme, THEMES } from "../src/themes.ts";
 
-const css = readFileSync(new URL("../src/themes.css", import.meta.url), "utf8");
+const css = readFileSync(new URL("../src/themes.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const palettes = new Map([...css.matchAll(/([^{}]+)\{([^{}]+)\}/g)].flatMap(([, selector, body]) => {
   const id = selector.match(/\[data-palette="([\w-]+)"\]/)?.[1];
   if (!id) return [];

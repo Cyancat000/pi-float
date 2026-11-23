@@ -31,7 +31,7 @@ export function projectEntry(entry: SessionEntry): ChatMessage | null {
   if (message.role !== "assistant") return null;
   const { usage } = message;
   return {
-    ...base, role: "assistant", blocks: contentBlocks(message.content), model: `${message.provider}/${message.model}`,
+    ...base, timestamp: new Date(message.timestamp).toISOString(), role: "assistant", blocks: contentBlocks(message.content), model: `${message.provider}/${message.model}`,
     ...(message.stopReason === "aborted" || message.stopReason === "error" ? { stopReason: message.stopReason } : {}),
     ...(message.stopReason === "error" && message.errorMessage ? { error: message.errorMessage } : {}),
     usage: { input: usage.input, output: usage.output, cacheRead: usage.cacheRead, cacheWrite: usage.cacheWrite,
