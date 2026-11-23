@@ -250,6 +250,8 @@ button:disabled { cursor: default; }
 .composer .cm-editor.cm-focused { outline: none; }
 .composer .cm-content:focus-visible { outline: none; }
 .composer .cm-editor.cm-focused .cm-cursor { border-left-color: currentColor; }
+/* Keep announcements accessible and out of layout even when CSP blocks CodeMirror's injected styles. */
+.composer .cm-announced { @apply sr-only; }
 ::selection { background: var(--selection); color: var(--text); }
 /* Size the scrolling element itself, and make the editable area fill any spare space. */
 .composer .cm-scroller { min-height: 43px; max-height: min(116px, 28vh); height: auto; overflow: auto; overscroll-behavior: contain; font-family: inherit; }

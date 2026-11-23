@@ -1,4 +1,5 @@
 import type { SessionTree } from "@pi-float/protocol";
+import { RotateCw, X } from "lucide-react";
 import { useId, useMemo, useRef, useState } from "react";
 
 const names = { user: "你", assistant: "助手", notice: "通知", summary: "摘要", position: "会话位置" };
@@ -50,8 +51,12 @@ export function SessionTreePanel({ tree, stale, pending, canNavigate, canRefresh
   return <section className="session-history" aria-label="会话树">
     <div className="flex items-center gap-2">
       <span className="flex-1 font-medium">会话树</span>
-      <button type="button" className="control" disabled={!canRefresh} onClick={onRefresh}>刷新</button>
-      <button type="button" className="control" onClick={onClose}>关闭</button>
+      <button type="button" className="icon-button" title="刷新会话树" aria-label="刷新会话树" disabled={!canRefresh} onClick={onRefresh}>
+        <RotateCw size={14} aria-hidden="true" />
+      </button>
+      <button type="button" className="icon-button" title="关闭会话树" aria-label="关闭会话树" onClick={onClose}>
+        <X size={16} aria-hidden="true" />
+      </button>
     </div>
     {stale && !pending && <p role="status" className="warning-text">会话位置已变化，请刷新后再切换。</p>}
     {!tree && <p role="status" className="muted">{pending ? "正在读取会话树…" : "未能读取会话树，请刷新。"}</p>}
