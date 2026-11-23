@@ -7,7 +7,7 @@ import { app as tauriApp } from "../src-tauri/tauri.conf.json";
 import { projectFolder, sessionKey, useTerminalBridge, type LaunchTarget } from "./bridge-client";
 import { ChatPane } from "./chat-pane";
 import { CompactPane } from "./compact-pane";
-import { NotificationStack } from "./notification-stack";
+import { NotificationStack, type ReportedError } from "./notification-stack";
 import { Picker } from "./picker";
 import { savePreference, usePreferences } from "./preferences";
 
@@ -17,7 +17,7 @@ const normalMinimum = new LogicalSize(normalConfig.minWidth!, normalConfig.minHe
 const compactSize = new LogicalSize(300, 108);
 const compactMinimum = new LogicalSize(260, compactSize.height);
 
-export function MainWindow({ ready, report }: { ready: boolean; report: (error: unknown) => void }) {
+export function MainWindow({ ready, report, error }: { ready: boolean; report: (error: unknown) => void; error?: ReportedError }) {
   const bridge = useTerminalBridge(report);
   const { attach, selected, sessions } = bridge;
   const [showOpacity, setShowOpacity] = useState(false);
@@ -143,10 +143,14 @@ export function MainWindow({ ready, report }: { ready: boolean; report: (error: 
         </button>
         <button className="icon-button" type="button" title="隐藏到托盘" aria-label="隐藏到托盘" onClick={() => void mainWindow.hide().catch(report)}><Minus size={17} /></button>
       </header>
-      {compact && <CompactPane snapshot={compactSnapshot} emptyMessage={emptyMessage} />}
+      {compact && <>
+        <NotificationStack error={error} />
+        <CompactPane snapshot={compactSnapshot} emptyMessage={emptyMessage} />
+      </>}
       {/* Keep the composer mounted so switching views doesn't lose the unsent draft or undo history. */}
       <div className={compact ? "hidden" : "contents"}>
-        {selected ? <ChatPane key={`${selected}:${bridge.snapshot?.sessionId ?? ""}`} terminal={bridge} ready={ready} report={report} visible={!compact} /> : (
+        {selected ? <ChatPane key={`${selected}:${bridge.snapshot?.sessionId ?? ""}`} terminal={bridge} ready={ready} report={report} visible={!compact} error={compact ? undefined : error} /> : <>
+          <NotificationStack error={compact ? undefined : error} />
           <div className="min-h-0 flex-1">
             <div className="empty-chat" role="status">
               <Terminal size={22} aria-hidden="true" />
@@ -154,9 +158,8 @@ export function MainWindow({ ready, report }: { ready: boolean; report: (error: 
               <p>{sessions.length ? "从顶栏选择要附着的 Pi 终端。" : <>请在已加载 pi-float 扩展的 Pi 终端中运行 <code>/ui</code>。</>}</p>
             </div>
           </div>
-        )}
-        <NotificationStack notices={bridge.notifications} dismiss={bridge.dismissNotification} />
-        </div>
+        </>}
       </div>
-    );
-  }
+    </div>
+  );
+}

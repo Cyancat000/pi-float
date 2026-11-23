@@ -13,6 +13,7 @@
   },
   "include": [
     "src",
+    "demo",
     "vite.config.ts"
   ]
 }

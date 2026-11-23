@@ -2,6 +2,7 @@ import type { ModuleVisibility } from "@pi-float/protocol";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { X } from "lucide-react";
 import { useState } from "react";
+import { NotificationStack, type ReportedError } from "./notification-stack";
 import { savePreference, usePreferences } from "./preferences";
 import { THEMES } from "./themes";
 
@@ -12,13 +13,14 @@ const modules: [keyof ModuleVisibility, string][] = [
 
 interface SettingsProps { ready: boolean; report: (error: unknown) => void }
 
-export function SettingsWindow({ ready, report }: SettingsProps) {
+export function SettingsWindow({ ready, report, error }: SettingsProps & { error?: ReportedError }) {
   return <div className="floating-shell flex h-full flex-col overflow-hidden">
     <header className="titlebar" data-tauri-drag-region>
       <span className="flex h-full flex-1 items-center pl-1 font-medium" data-tauri-drag-region>pi-float 设置</span>
       <button className="icon-button" type="button" title="关闭设置" aria-label="关闭设置"
         onClick={() => void getCurrentWindow().hide().catch(report)}><X size={16} /></button>
     </header>
+    <NotificationStack error={error} />
     <SettingsContent ready={ready} report={report} />
   </div>;
 }

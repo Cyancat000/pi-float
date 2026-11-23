@@ -1,35 +1,44 @@
 import type { NotificationEvent, NotificationLevel } from "@pi-float/protocol";
+import { CircleAlert, Info, TriangleAlert, X } from "lucide-react";
 import { useEffect } from "react";
 
-const presentation: Record<NotificationLevel, { label: string; color: string }> = {
-  info: { label: "提示", color: "toast-info" },
-  warning: { label: "警告", color: "toast-warning" },
-  error: { label: "错误", color: "toast-error" },
+const presentation = {
+  info: { label: "提示", Icon: Info },
+  warning: { label: "警告", Icon: TriangleAlert },
+  error: { label: "错误", Icon: CircleAlert },
 };
 
-type Props = { dismiss: (notice: NotificationEvent) => void };
+export type ReportedError = { message: string; dismiss: () => void };
+type PiNotices = { notifications: NotificationEvent[]; dismissNotification: (notice: NotificationEvent) => void };
 
-function NotificationToast({ notice, dismiss }: Props & { notice: NotificationEvent }) {
+function NoticeRow({ level, message, dismiss }: ReportedError & { level: NotificationLevel }) {
+  const { label, Icon } = presentation[level];
+  return (
+    <div className="notice-row" data-level={level}>
+      <div className="notice-content" role={level === "error" ? "alert" : "status"}>
+        <Icon size={14} className="notice-icon" aria-hidden="true" />
+        <div className="notice-text"><strong>{label}</strong>{" "}{message}</div>
+      </div>
+      <button className="icon-button notice-close" type="button" title="关闭通知" aria-label="关闭通知" onClick={dismiss}><X size={14} aria-hidden="true" /></button>
+    </div>
+  );
+}
+
+function PiNotice({ notice, dismiss }: { notice: NotificationEvent; dismiss: PiNotices["dismissNotification"] }) {
   useEffect(() => {
     const timer = window.setTimeout(() => dismiss(notice), 8000);
     return () => clearTimeout(timer);
   }, [notice, dismiss]);
 
-  const { label, color } = presentation[notice.level];
-  return (
-    <div className={"toast pointer-events-auto flex items-start gap-2 p-2 text-xs " + color}>
-      <div className="min-w-0 flex-1 whitespace-pre-wrap break-words" role={notice.level === "error" ? "alert" : "status"}>
-        <strong>{label}:</strong>{" "}{notice.message}
-      </div>
-      <button className="icon-button" type="button" aria-label="关闭通知" onClick={() => dismiss(notice)}>×</button>
-    </div>
-  );
+  return <NoticeRow level={notice.level} message={notice.message} dismiss={() => dismiss(notice)} />;
 }
 
-export function NotificationStack({ notices, dismiss }: Props & { notices: NotificationEvent[] }) {
+export function NotificationStack({ pi, error }: { pi?: PiNotices; error?: ReportedError }) {
+  if (!pi?.notifications.length && !error) return null;
   return (
-    <div className="pointer-events-none absolute inset-x-2 top-10 z-10 flex max-h-[calc(100%-3rem)] flex-col gap-1 overflow-y-auto" aria-label="Pi 通知">
-      {notices.map((notice) => <NotificationToast key={notice.sequence} notice={notice} dismiss={dismiss} />)}
-    </div>
+    <section className="notice-stack" aria-label="通知">
+      {error && <NoticeRow level="error" {...error} />}
+      {pi?.notifications.map((notice) => <PiNotice key={notice.sequence} notice={notice} dismiss={pi.dismissNotification} />)}
+    </section>
   );
 }

@@ -7,6 +7,7 @@ import type { TerminalBridge } from "./bridge-client";
 import { Code } from "./code-highlight";
 import { useComposerEditor } from "./composer-editor";
 import { formatTokens } from "./format-tokens";
+import { NotificationStack, type ReportedError } from "./notification-stack";
 import { Picker } from "./picker";
 import { usePreferences } from "./preferences";
 import { SessionTreePanel } from "./session-tree";
@@ -114,7 +115,9 @@ function ContextMeter({ usage }: { usage: ContextUsage }) {
   return <span className="text-[11px] muted">上下文 {usage.tokens === null ? "—" : formatTokens(usage.tokens)} / {formatTokens(usage.contextWindow)}{usage.percent !== null && ` · ${Math.round(usage.percent)}%`}</span>;
 }
 
-export function ChatPane({ terminal, ready, report, visible }: { terminal: TerminalBridge; ready: boolean; report: (error: unknown) => void; visible: boolean }) {
+export function ChatPane({ terminal, ready, report, visible, error }: {
+  terminal: TerminalBridge; ready: boolean; report: (error: unknown) => void; visible: boolean; error?: ReportedError;
+}) {
   const { snapshot } = terminal;
   const connected = terminal.connection === "connected" && !!snapshot;
   const modules = usePreferences((prefs) => prefs.modules);
@@ -236,6 +239,17 @@ export function ChatPane({ terminal, ready, report, visible }: { terminal: Termi
     if (visible && stick.current && feed.current) feed.current.scrollTop = feed.current.scrollHeight;
   }, [snapshot?.messages, snapshot?.streaming, modules, busy, visible]);
 
+  // An inline notice can resize the feed without changing any messages.
+  useLayoutEffect(() => {
+    const element = feed.current;
+    if (!visible || !element) return;
+    const observer = new ResizeObserver(() => {
+      if (stick.current) element.scrollTop = element.scrollHeight;
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [visible]);
+
   function submit(event?: FormEvent<HTMLFormElement>, command?: string) {
     event?.preventDefault();
     if (!canSend) return;
@@ -286,6 +300,7 @@ export function ChatPane({ terminal, ready, report, visible }: { terminal: Termi
       </section>}
       {connected && snapshot.todos && <TodoPanel todos={snapshot.todos} />}
     </div>
+    <NotificationStack pi={terminal} error={error} />
     <div ref={feed} className="chat-feed" onScroll={(event) => {
       const el = event.currentTarget;
       if (visible) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;

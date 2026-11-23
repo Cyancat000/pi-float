@@ -34,12 +34,9 @@ function App() {
     };
   }, [report]);
 
-  return (
-    <>
-      {isSettings ? <SettingsWindow ready={ready} report={report} /> : <MainWindow ready={ready} report={report} />}
-      {error && <div role="alert" className="toast toast-error absolute inset-x-3 bottom-3 z-40 p-2 text-xs"><button className="float-right ml-2" aria-label="关闭提示" onClick={() => setError("")}>×</button>{error}</div>}
-    </>
-  );
+  const reportedError = error ? { message: error, dismiss: () => setError("") } : undefined;
+  return isSettings ? <SettingsWindow ready={ready} report={report} error={reportedError} />
+    : <MainWindow ready={ready} report={report} error={reportedError} />;
 }
 
 createRoot(document.getElementById("root")!).render(<StrictMode><App /></StrictMode>);
